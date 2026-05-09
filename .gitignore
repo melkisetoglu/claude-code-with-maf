@@ -1,0 +1,18 @@
+# .NET build artifacts
+bin/
+obj/
+*.user
+*.suo
+.vs/
+
+# IDE
+.idea/
+*.swp
+.DS_Store
+
+# User data — sessions contain conversation history with Claude. Never commit.
+sessions/
+
+# Local secrets / env overrides
+.env
+*.env.local
