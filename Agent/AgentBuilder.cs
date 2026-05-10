@@ -3,8 +3,8 @@
 //
 //  Step 0: AnthropicClient + AsAIAgent.
 //  Step 1: + read_file tool.
+//  Step 2: + list_dir, glob, grep — the read-only navigation toolset.
 //  Future steps wire more in here without touching Program.cs:
-//    - Step 2:   list_dir, glob, grep
 //    - Step 3:   ToolApprovalAgent wrapping
 //    - Step 4:   write_file, edit_file, bash (gated by Step 3)
 //    - Step 5:   LoggingAgent + OpenTelemetry
@@ -35,6 +35,9 @@ public static class AgentBuilder
         var tools = new List<AITool>
         {
             AIFunctionFactory.Create(ReadFile.Read, name: "read_file"),
+            AIFunctionFactory.Create(ListDir.Run,  name: "list_dir"),
+            AIFunctionFactory.Create(Glob.Run,     name: "glob"),
+            AIFunctionFactory.Create(Grep.Run,     name: "grep"),
         };
 
         // FunctionInvokingChatClient (under the hood of AsAIAgent when tools
@@ -44,7 +47,11 @@ public static class AgentBuilder
             model: model,
             name: "ClaudeChat",
             instructions: "You are a helpful assistant. Keep replies concise. " +
-                          "When you need the contents of a file, call the read_file tool.",
+                          "You can navigate the user's project with these tools: " +
+                          "read_file (open a file), list_dir (one directory level), " +
+                          "glob (find files by pattern, recursive), grep (search file contents). " +
+                          "Prefer glob/grep over guessing paths. " +
+                          "Use specific roots/patterns to avoid noisy results.",
             tools: tools);
     }
 }

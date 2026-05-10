@@ -47,7 +47,7 @@ The single project at the repo root grows with each step. Run [`dotnet run`](REA
 | # | Step | Status |
 |---|---|---|
 | 01 | [First read-only tool: `read_file`](tutorial/01-read-file.md) | ✅ done |
-| 02 | File-system toolset: `list_dir`, `glob`, `grep` | _planned_ |
+| 02 | [File-system toolset: `list_dir`, `glob`, `grep`](tutorial/02-fs-toolset.md) | ✅ done |
 | 03 | Tool-approval gate (`ToolApprovalAgent`) | _planned_ |
 | 04 | Mutation tools: `write_file`, `edit_file`, `bash` (gated by step 3) | _planned_ |
 

@@ -79,11 +79,10 @@ public static class ChatLoop
                             Console.Write(text.Text);
                             break;
                         case FunctionCallContent call:
-                            // First arg value is enough for a one-line trace.
-                            // Multi-arg tools (Step 2 onwards) can render a
-                            // smarter summary if needed.
-                            var firstArg = call.Arguments?.Values.FirstOrDefault();
-                            Console.WriteLine($"\n[{call.Name}: {firstArg}]");
+                            // Render every argument as key="value", truncating
+                            // long values so a multi-line regex doesn't dump
+                            // into the terminal.
+                            Console.WriteLine($"\n[{FormatCall(call)}]");
                             break;
                     }
                 }
@@ -98,4 +97,19 @@ public static class ChatLoop
 
         Console.WriteLine($"\n(session saved: {sessionId} — resume with: dotnet run -- --resume {sessionId})");
     }
+
+    // Render a tool-call as "name: key=\"val\", key=\"val\"" — truncates each
+    // value so a long regex or multi-line argument doesn't blow up a line.
+    private static string FormatCall(FunctionCallContent call)
+    {
+        if (call.Arguments is null || call.Arguments.Count == 0)
+            return call.Name;
+
+        var args = string.Join(", ",
+            call.Arguments.Select(kv => $"{kv.Key}=\"{Truncate(kv.Value?.ToString() ?? "")}\""));
+        return $"{call.Name}: {args}";
+    }
+
+    private static string Truncate(string s, int max = 60) =>
+        s.Length <= max ? s : s[..max] + "...";
 }
