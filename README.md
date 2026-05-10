@@ -4,7 +4,7 @@ A workshop that grows a Claude Code-style console agent on top of **Microsoft Ag
 
 > **Following the workshop?** Read **[TUTORIAL.md](TUTORIAL.md)** for the step-by-step guide. This README is just "how to run it".
 
-Current state: streaming REPL with read-only navigation tools (`read_file`, `list_dir`, `glob`, `grep`), named sessions you can list and resume — Claude Code-style.
+Current state: streaming REPL with read-only navigation tools (`read_file`, `list_dir`, `glob`, `grep`) plus a tool-approval gate (`ToolApprovalAgent`) ready for mutation tools, named sessions you can list and resume — Claude Code-style.
 
 ## Prerequisites
 
@@ -97,10 +97,12 @@ AgentSession session = await agent.DeserializeSessionAsync(sessionElem);
 - [claude-code-with-maf.csproj](claude-code-with-maf.csproj) — pins `Microsoft.Agents.AI.Anthropic 1.5.0-preview.260507.1`
 - [Program.cs](Program.cs) — entry point: arg parsing, `--list`/`--help`, session resolution
 - [Agent/AgentBuilder.cs](Agent/AgentBuilder.cs) — assembles the `AIAgent` (this is where tools/providers will be added)
-- [Harness/ChatLoop.cs](Harness/ChatLoop.cs) — interactive chat loop and `/command` dispatch
+- [Harness/ChatLoop.cs](Harness/ChatLoop.cs) — interactive chat loop, `/command` dispatch, approval round-trip
+- [Harness/ApprovalPrompt.cs](Harness/ApprovalPrompt.cs) — y/N gate for approval-required tools (Step 3)
 - [Persistence/SessionStore.cs](Persistence/SessionStore.cs) — session persistence + metadata wrapper
 - [Tools/ReadFile.cs](Tools/ReadFile.cs) — the `read_file` function tool
 - [Tools/ListDir.cs](Tools/ListDir.cs), [Tools/Glob.cs](Tools/Glob.cs), [Tools/Grep.cs](Tools/Grep.cs) — read-only navigation tools (Step 2)
+- [Tools/SimulateAction.cs](Tools/SimulateAction.cs) — throwaway approval-required demo tool (Step 3 only; replaced by mutation tools in Step 4)
 
 ## Notes
 

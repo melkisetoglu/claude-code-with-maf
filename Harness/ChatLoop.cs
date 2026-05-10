@@ -5,7 +5,11 @@
 //    1. Reads a user line.
 //    2. Handles harness-level commands (/exit, /quit, /clear, /id) without
 //       round-tripping to the model.
-//    3. Streams a turn via RunStreamingAsync.
+//    3. Streams a turn via RunStreamingAsync, possibly looping if the model
+//       hits an approval-required tool (Step 3+): we collect any
+//       ToolApprovalRequestContent emitted in the stream, prompt the user,
+//       and resume the same conversation by feeding the responses back in
+//       a new RunStreamingAsync call.
 //    4. Persists the session to disk.
 //
 //  Persisting per turn (rather than only on exit) means Ctrl+C can't lose state.
@@ -62,30 +66,51 @@ public static class ChatLoop
                 continue;
             }
 
-            // Streaming turn. RunStreamingAsync returns IAsyncEnumerable<AgentResponseUpdate>.
-            // Each update has a Contents list of AIContent items: TextContent
-            // for streamed text, FunctionCallContent when the model decides
-            // to call a tool, FunctionResultContent for the tool's return.
-            // We render text inline and announce tool calls on their own line
-            // so the agentic loop is visible.
+            // A single user input may require multiple RunStreamingAsync
+            // calls if the model hits an approval-required tool: stream
+            // emits ToolApprovalRequestContent → we prompt → we feed the
+            // ToolApprovalResponseContent back as a follow-up message →
+            // stream resumes. Each iteration of the inner loop is one such
+            // round-trip.
             Console.Write("claude > ");
-            await foreach (var update in agent.RunStreamingAsync(input, session))
+            ChatMessage nextMessage = new(ChatRole.User, input);
+            while (true)
             {
-                foreach (var content in update.Contents)
+                var pendingApprovals = new List<ToolApprovalRequestContent>();
+
+                await foreach (var update in agent.RunStreamingAsync(nextMessage, session))
                 {
-                    switch (content)
+                    foreach (var content in update.Contents)
                     {
-                        case TextContent text:
-                            Console.Write(text.Text);
-                            break;
-                        case FunctionCallContent call:
-                            // Render every argument as key="value", truncating
-                            // long values so a multi-line regex doesn't dump
-                            // into the terminal.
-                            Console.WriteLine($"\n[{FormatCall(call)}]");
-                            break;
+                        switch (content)
+                        {
+                            case TextContent text:
+                                Console.Write(text.Text);
+                                break;
+                            case FunctionCallContent call:
+                                // Render every argument as key="value", truncating long
+                                // values so a multi-line regex doesn't dump into the terminal.
+                                Console.WriteLine($"\n[{FormatCall(call)}]");
+                                break;
+                            case ToolApprovalRequestContent req:
+                                pendingApprovals.Add(req);
+                                break;
+                        }
                     }
                 }
+
+                if (pendingApprovals.Count == 0) break;
+
+                // The model wants to run one or more approval-required tools.
+                // Ask the user for each, build a follow-up message carrying the
+                // responses, and continue the same conversation.
+                var responses = new List<AIContent>();
+                foreach (var req in pendingApprovals)
+                {
+                    var approved = ApprovalPrompt.Ask(req);
+                    responses.Add(req.CreateResponse(approved, approved ? "user approved" : "user denied"));
+                }
+                nextMessage = new ChatMessage(ChatRole.User, responses);
             }
             Console.WriteLine("\n");
 
