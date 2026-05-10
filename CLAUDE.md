@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A **workshop-style tutorial** that grows a Claude Code-style console agent on top of **Microsoft Agent Framework (MAF)** in .NET 9, talking to Claude via the official Anthropic SDK adapter. The single project at the repo root grows step-by-step across 17 chapters in 6 milestones (see [TUTORIAL.md](TUTORIAL.md)).
 
-Current state: **Step 3 — tool-approval gate** (`ToolApprovalAgent` wraps the agent; `simulate_action` is a throwaway gated demo tool that exercises the gate end-to-end. Step 4 replaces the demo with real mutators.).
+Current state: **Step 4 — mutation tools** (`write_file`, `edit_file`, `bash` — every call routes through Step 3's `ToolApprovalAgent` gate; `simulate_action` deleted now that real mutators exist).
 
 This means: when adding code, the unit of work is "the next step." Each step is one sitting, ends in a clean state, gets a git tag (`step-00`, `step-01`, …) and a `[step-NN]` commit prefix so `git log --oneline` reads like a table of contents. Don't sneak future-step features into the current step.
 

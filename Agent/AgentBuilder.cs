@@ -4,11 +4,11 @@
 //  Step 0: AnthropicClient + AsAIAgent.
 //  Step 1: + read_file tool.
 //  Step 2: + list_dir, glob, grep — the read-only navigation toolset.
-//  Step 3: + ToolApprovalAgent wrapper, + simulate_action (approval-required
-//          demo tool that exercises the gate; replaced by real mutators in
-//          Step 4).
+//  Step 3: + ToolApprovalAgent wrapper. simulate_action demo tool exercised
+//          the gate; deleted in Step 4 in favour of real mutators.
+//  Step 4: + write_file, edit_file, bash — the mutation tools, every one
+//          marked ApprovalRequiredAIFunction. The agent stops being read-only.
 //  Future steps wire more in here without touching Program.cs:
-//    - Step 4:   write_file, edit_file, bash (gated by Step 3)
 //    - Step 5:   LoggingAgent + OpenTelemetry
 //    - Step 10:  CompactionProvider
 //    - Step 11+: AgentSkillsProvider, FileMemoryProvider, TodoProvider, …
@@ -40,28 +40,40 @@ public static class AgentBuilder
         // the JSON schema the model sees — that's how the model knows when
         // and how to call them.
         //
-        // simulate_action is wrapped in ApprovalRequiredAIFunction. That
+        // Every mutation tool is wrapped in ApprovalRequiredAIFunction. That
         // marker is what the ToolApprovalAgent (below) keys off to emit a
         // ToolApprovalRequestContent in the stream instead of running it.
+        // Read-only tools are NOT wrapped — they auto-invoke as before.
         var tools = new List<AITool>
         {
+            // Read-only — auto-invoke.
             AIFunctionFactory.Create(ReadFile.Read, name: "read_file"),
             AIFunctionFactory.Create(ListDir.Run,  name: "list_dir"),
             AIFunctionFactory.Create(Glob.Run,     name: "glob"),
             AIFunctionFactory.Create(Grep.Run,     name: "grep"),
+
+            // Mutation — every call routes through the approval gate.
             new ApprovalRequiredAIFunction(
-                AIFunctionFactory.Create(SimulateAction.Run, name: "simulate_action")),
+                AIFunctionFactory.Create(WriteFile.Run, name: "write_file")),
+            new ApprovalRequiredAIFunction(
+                AIFunctionFactory.Create(EditFile.Run,  name: "edit_file")),
+            new ApprovalRequiredAIFunction(
+                AIFunctionFactory.Create(Bash.Run,      name: "bash")),
         };
 
         AIAgent inner = client.AsAIAgent(
             model: model,
             name: "ClaudeChat",
             instructions: "You are a helpful assistant. Keep replies concise. " +
-                          "Read-only project navigation: read_file, list_dir, glob, grep. " +
-                          "Prefer glob/grep over guessing paths; use specific roots/patterns. " +
-                          "There is also a simulate_action tool that requires explicit user " +
-                          "approval and exists for demoing the approval gate — call it when " +
-                          "the user asks to 'simulate' or to demo a dangerous action.",
+                          "Read-only navigation: read_file, list_dir, glob, grep — auto-invoked. " +
+                          "Mutation tools: write_file (create/overwrite), edit_file (literal " +
+                          "find-and-replace in an existing file), bash (run shell commands) — " +
+                          "every call requires explicit user approval. " +
+                          "Prefer the smallest tool that does the job: edit_file for targeted " +
+                          "changes, write_file for new files or full rewrites, bash only for " +
+                          "operations the file tools can't do (running tests, git, build, etc.). " +
+                          "Write specific, narrow shell commands — they are easier for the user " +
+                          "to read and approve.",
             tools: tools);
 
         // Wrap once with the approval gate. Anything marked
