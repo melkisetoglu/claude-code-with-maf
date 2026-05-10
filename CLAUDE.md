@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A **workshop-style tutorial** that grows a Claude Code-style console agent on top of **Microsoft Agent Framework (MAF)** in .NET 9, talking to Claude via the official Anthropic SDK adapter. The single project at the repo root grows step-by-step across 17 chapters in 6 milestones (see [TUTORIAL.md](TUTORIAL.md)).
 
-Current state: **Step 0 — baseline** (streaming chat + named persistent sessions, no tools yet).
+Current state: **Step 1 — `read_file` tool** (chat plus the first agentic loop: the model can read files via a registered tool).
 
 This means: when adding code, the unit of work is "the next step." Each step is one sitting, ends in a clean state, gets a git tag (`step-00`, `step-01`, …) and a `[step-NN]` commit prefix so `git log --oneline` reads like a table of contents. Don't sneak future-step features into the current step.
 
@@ -57,7 +57,7 @@ One file per session at `sessions/<id>.json`, written **after every turn** (so C
 
 ## Target folder structure
 
-As steps land, **introduce each folder lazily the first time a step needs it** — don't pre-create empty ones. After the Step 0 cleanup, four folders exist (`Agent/`, `Harness/`, `Persistence/`, `tutorial/`); the rest will appear when their step does. Destination shape:
+As steps land, **introduce each folder lazily the first time a step needs it** — don't pre-create empty ones. After Step 1, five code folders exist (`Agent/`, `Harness/`, `Persistence/`, `Tools/`, `tutorial/`); the rest will appear when their step does. Destination shape:
 
 ```
 claude-code-with-maf/

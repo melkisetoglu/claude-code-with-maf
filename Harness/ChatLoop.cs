@@ -18,6 +18,7 @@
 // =============================================================================
 
 using Microsoft.Agents.AI;
+using Microsoft.Extensions.AI;
 using ClaudeChat.Persistence;
 
 namespace ClaudeChat.Harness;
@@ -62,11 +63,31 @@ public static class ChatLoop
             }
 
             // Streaming turn. RunStreamingAsync returns IAsyncEnumerable<AgentResponseUpdate>.
-            // In Step 0 each update only carries text; in later steps it'll also carry
-            // tool-call requests, tool results, reasoning ("thinking") content, etc.
+            // Each update has a Contents list of AIContent items: TextContent
+            // for streamed text, FunctionCallContent when the model decides
+            // to call a tool, FunctionResultContent for the tool's return.
+            // We render text inline and announce tool calls on their own line
+            // so the agentic loop is visible.
             Console.Write("claude > ");
             await foreach (var update in agent.RunStreamingAsync(input, session))
-                Console.Write(update.Text);
+            {
+                foreach (var content in update.Contents)
+                {
+                    switch (content)
+                    {
+                        case TextContent text:
+                            Console.Write(text.Text);
+                            break;
+                        case FunctionCallContent call:
+                            // First arg value is enough for a one-line trace.
+                            // Multi-arg tools (Step 2 onwards) can render a
+                            // smarter summary if needed.
+                            var firstArg = call.Arguments?.Values.FirstOrDefault();
+                            Console.WriteLine($"\n[{call.Name}: {firstArg}]");
+                            break;
+                    }
+                }
+            }
             Console.WriteLine("\n");
 
             // Lazily set a preview the first time we have user input — this is what
