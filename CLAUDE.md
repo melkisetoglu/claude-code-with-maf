@@ -26,7 +26,19 @@ Short flags: `-c`, `-r`, `-l`, `-h`. In-chat (slash-prefixed): `/exit` / `/quit`
 
 `ANTHROPIC_DEPLOYMENT_NAME` overrides the model (default `claude-haiku-4-5`; try `claude-sonnet-4-6` for harder questions).
 
-No test suite exists yet.
+## Tests
+
+```bash
+dotnet test                              # run all
+dotnet test --filter Category=Unit       # unit tier (fast, no API key)
+# dotnet test --filter Category=Live     # live tier (needs ANTHROPIC_API_KEY) — none yet
+```
+
+Two-tier strategy: **Unit** tier covers harness plumbing without hitting the API (SessionStore, ReadFile, eventually a fake-AIAgent ChatLoop test). **Live** tier hits real Claude — gated to nightly/dispatch in CI, never runs on every PR. No live tests exist yet; they land alongside an explicit testing-interlude step.
+
+Tests live in [tests/ClaudeChat.Tests/](tests/ClaudeChat.Tests/). Each test class is tagged `[Trait("Category", "Unit")]`. **The main project's `.csproj` excludes `tests/**` from its compile glob** — without that, the SDK auto-includes test files into the main project and the build fails.
+
+`SessionStore.Dir` is a settable static (was `const`) so tests can swap it for a temp directory. Production never reassigns it.
 
 ## Architecture (the bit that needs explaining)
 

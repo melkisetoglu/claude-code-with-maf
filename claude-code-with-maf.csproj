@@ -12,4 +12,12 @@
     <PackageReference Include="Microsoft.Agents.AI.Anthropic" Version="1.5.0-preview.260507.1" />
   </ItemGroup>
 
+  <!-- The default SDK glob would otherwise compile tests/**/*.cs into this
+       project, which is wrong: tests live in their own ClaudeChat.Tests project
+       with xunit. -->
+  <ItemGroup>
+    <Compile Remove="tests/**" />
+    <None Remove="tests/**" />
+  </ItemGroup>
+
 </Project>

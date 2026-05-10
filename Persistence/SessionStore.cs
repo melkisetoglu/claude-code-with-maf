@@ -36,7 +36,10 @@ public record SessionMeta(
 
 public static class SessionStore
 {
-    public const string Dir = "sessions";
+    // Mutable so tests can swap it for a temp directory; production code never
+    // reassigns it. Keeping it a settable static field is the smallest seam
+    // that avoids passing a directory through every call site.
+    public static string Dir = "sessions";
 
     public static void EnsureDir() => Directory.CreateDirectory(Dir);
 

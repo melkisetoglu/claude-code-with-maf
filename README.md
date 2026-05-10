@@ -54,6 +54,15 @@ $ dotnet run -- -r a3f
 Resumed session a3f7c102 — what's a monoid?
 ```
 
+## Tests
+
+```bash
+dotnet test                                    # all unit tests
+dotnet test --filter Category=Unit             # explicit filter (same set today)
+```
+
+Two test classes today, both pure (no API key, no agent): `SessionStoreTests` (NewId / Enumerate / FindByPrefix) and `ReadFileTests` (happy path / missing / oversize / boundary). Live integration tests come later — see CLAUDE.md.
+
 ## Configure
 
 | Env var | Default | Notes |
