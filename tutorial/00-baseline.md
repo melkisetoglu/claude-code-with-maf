@@ -9,12 +9,12 @@ This step doesn't make our app an *agent* yet — there are no tools. But it get
 ```
 $ dotnet run
 Started new session: a3f7c102
-Model: claude-haiku-4-5. Commands: 'exit' (quit), 'clear' (new session), '/id' (show id).
+Model: claude-haiku-4-5. Commands: '/exit' (quit), '/clear' (new session), '/id' (show id).
 
 you > what's a monoid?
 claude > A set with an associative binary operation and an identity element. [...]
 
-you > exit
+you > /exit
 (session saved: a3f7c102 — resume with: dotnet run -- --resume a3f7c102)
 
 $ dotnet run -- --list
@@ -59,11 +59,32 @@ export ANTHROPIC_API_KEY=sk-ant-...
 export ANTHROPIC_DEPLOYMENT_NAME=claude-haiku-4-5
 ```
 
+### 3. Mirror the folder layout
+
+The project splits into four files across three folders. Create them now so the Walkthrough's snippets have a home:
+
+```
+Program.cs
+Agent/AgentBuilder.cs
+Harness/ChatLoop.cs
+Persistence/SessionStore.cs
+```
+
+Each subsection of the Walkthrough below tells you which file the code goes in. (The full target layout — and why we don't pre-create `Tools/`, `Providers/`, etc. yet — is in [CLAUDE.md](../CLAUDE.md).)
+
 ## Walkthrough
 
-The full code is in [`Program.cs`](../Program.cs); this is the narrative.
+The code lives in four files:
+- [`Program.cs`](../Program.cs) — entry point: arg parsing, `--list`/`--help`, resolving which session to use.
+- [`Agent/AgentBuilder.cs`](../Agent/AgentBuilder.cs) — the one place we wire `AnthropicClient` → `AsAIAgent`. Future steps (tools, approval, logging, providers) all extend this file.
+- [`Harness/ChatLoop.cs`](../Harness/ChatLoop.cs) — the interactive chat loop and harness-level commands (`/exit`, `/clear`, `/id`). Steps 7–9 grow this into a real slash-command dispatcher with plan mode and Ctrl+C interrupt.
+- [`Persistence/SessionStore.cs`](../Persistence/SessionStore.cs) — persistence + the metadata wrapper around the framework's opaque session blob.
+
+This is the narrative.
 
 ### The two-line agent
+
+*In [`Agent/AgentBuilder.cs`](../Agent/AgentBuilder.cs).*
 
 ```csharp
 AnthropicClient client = new() { ApiKey = apiKey };
@@ -83,6 +104,8 @@ After this point we mostly stop touching `AnthropicClient`. The `AIAgent` is wha
 
 ### The conversation state — `AgentSession`
 
+*Created in [`Program.cs`](../Program.cs) when starting fresh, and again in [`Harness/ChatLoop.cs`](../Harness/ChatLoop.cs) when the user types `/clear`.*
+
 ```csharp
 AgentSession session = await agent.CreateSessionAsync();
 ```
@@ -99,6 +122,8 @@ That last pair is what makes persistence trivial: the framework hands you a `Jso
 
 ### The streaming loop
 
+*In [`Harness/ChatLoop.cs`](../Harness/ChatLoop.cs).*
+
 ```csharp
 await foreach (var update in agent.RunStreamingAsync(input, session))
     Console.Write(update.Text);
@@ -113,6 +138,8 @@ await foreach (var update in agent.RunStreamingAsync(input, session))
 The non-streaming alternative is `RunAsync(input, session)` which gives you a single `AgentResponse` with `.Text` aggregated. We pick streaming because it makes the experience feel responsive — but more importantly, in later steps it lets us show tool calls *as they happen* rather than after the fact.
 
 ### Persistence — the only nontrivial bit
+
+*In [`Persistence/SessionStore.cs`](../Persistence/SessionStore.cs) — `SaveAsync` wraps the first call, `LoadAsync` wraps the second.*
 
 MAF gives you the round-trip primitives:
 
@@ -139,6 +166,8 @@ Everything but `session` is *ours*, added so we can implement `--list` and `--re
 We persist after every turn, not just on exit. Costs almost nothing, and it means a Ctrl+C never loses a conversation.
 
 ### Prefix-resume — the small UX win
+
+*Filtering in [`Persistence/SessionStore.cs`](../Persistence/SessionStore.cs) (`FindByPrefix`); the 0/1/many UX in [`Program.cs`](../Program.cs).*
 
 ```csharp
 dotnet run -- --resume a3f      // not a3f7c102
@@ -172,7 +201,7 @@ dotnet run -- --resume nope
 Then with an API key set, do a real turn, exit, and resume:
 
 ```bash
-dotnet run                # have a brief chat, then 'exit'
+dotnet run                # have a brief chat, then '/exit'
 dotnet run -- -c          # should resume with "Resumed session ..."
 ```
 
@@ -204,6 +233,10 @@ foreach (var t in asm.GetExportedTypes().OrderBy(t => t.FullName))
 
 You can find the restored DLL paths with `find ~/.nuget/packages/microsoft.agents.ai* -name "*.dll" -path "*net9*"`.
 
+### Trailing newlines on `ANTHROPIC_API_KEY`
+
+If the SDK throws `System.FormatException: New-line characters are not allowed in header values`, your env var has a stray `\n`. Common cause: `export ANTHROPIC_API_KEY=$(cat ~/keys/anthropic.txt)` — most editors save a trailing newline, and the SDK passes the value straight into the `x-api-key` HTTP header, which doesn't allow line breaks. Fix: call `.Trim()` on the value before handing it to the SDK. We do that in `Program.cs`.
+
 ### Don't `--amend` the session blob
 
 It's tempting to peek inside the framework's JSON and "fix" something. Don't. The shape will change between MAF versions, and your edits will quietly corrupt the conversation. Treat it as opaque.
@@ -229,7 +262,7 @@ Things this step *deliberately* doesn't have, that later steps add:
 - No compaction — long sessions will eventually hit the model's context limit.
 - No memory across sessions — each session is its own island.
 - No CLAUDE.md — the agent has no project context.
-- No slash commands — only `exit` / `clear` / `/id`.
+- No real slash-command system — only the three hard-coded ones (`/exit`, `/clear`, `/id`). Step 07 introduces the dispatcher.
 
 ## Next
 

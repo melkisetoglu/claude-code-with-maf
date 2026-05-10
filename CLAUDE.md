@@ -22,7 +22,7 @@ dotnet run -- --resume <id-prefix>  # prefix-match, like git/claude
 dotnet run -- --list                # list past sessions
 ```
 
-Short flags: `-c`, `-r`, `-l`, `-h`. In-chat: `exit`/`quit`/Ctrl+D, `clear` (new session, previous one stays on disk), `/id`.
+Short flags: `-c`, `-r`, `-l`, `-h`. In-chat (slash-prefixed): `/exit` / `/quit` / Ctrl+D, `/clear` (new session, previous one stays on disk), `/id`.
 
 `ANTHROPIC_DEPLOYMENT_NAME` overrides the model (default `claude-haiku-4-5`; try `claude-sonnet-4-6` for harder questions).
 
@@ -57,7 +57,7 @@ One file per session at `sessions/<id>.json`, written **after every turn** (so C
 
 ## Target folder structure
 
-The repo is currently flat (Step 0 has one `.cs` file). As steps land, **introduce each folder lazily the first time a step needs it** — don't pre-create empty ones. This is the destination shape so new files have an obvious home:
+As steps land, **introduce each folder lazily the first time a step needs it** — don't pre-create empty ones. After the Step 0 cleanup, four folders exist (`Agent/`, `Harness/`, `Persistence/`, `tutorial/`); the rest will appear when their step does. Destination shape:
 
 ```
 claude-code-with-maf/
@@ -68,15 +68,18 @@ claude-code-with-maf/
 ├── Tools/                         # function tools (steps 1–4)
 ├── Providers/                     # MAF providers (steps 10–15)
 ├── Harness/                       # the "Claude Code feel" — NOT MAF (steps 7–9)
-│   ├── Commands/                  # /help, /clear, /tools, /cost, /model
-│   ├── Streaming.cs               # spinner, Ctrl+C, syntax highlighting
-│   └── PlanMode.cs
-├── Sessions/                      # persistence + metadata wrapper
+│   ├── ChatLoop.cs                # interactive chat loop + /command dispatch
+│   ├── Commands/                  # /help, /clear, /tools, /cost, /model (step 7)
+│   ├── Streaming.cs               # spinner, Ctrl+C, syntax highlighting (step 9)
+│   └── PlanMode.cs                # (step 8)
+├── Persistence/                   # session storage + metadata wrapper
 ├── Config/                        # agent.json loader (step 6)
 ├── tutorial/                      # one .md per step, filename matches step number
-├── sessions/                      # gitignored runtime data
+├── sessions/                      # gitignored runtime data (note: lowercase!)
 └── tests/                         # if/when added — separate .csproj
 ```
+
+> **Naming note.** Code folder is `Persistence/`, runtime data folder is `sessions/`. They must not share a root word — macOS's case-insensitive filesystem makes git's gitignore evaluation case-insensitive too, so a `sessions/` ignore rule would also hide a `Sessions/` code folder. Keeping the names distinct avoids the trap.
 
 Two boundaries worth holding:
 

@@ -25,9 +25,9 @@ dotnet run -- --help                # usage
 
 Short flags: `-c`, `-r`, `-l`, `-h`.
 
-Commands inside the chat:
-- `exit` / `quit` / Ctrl+D — quit (session is saved)
-- `clear` — start a new session in the same process; the previous one stays saved
+Commands inside the chat (all slash-prefixed):
+- `/exit` / `/quit` / Ctrl+D — quit (session is saved)
+- `/clear` — start a new session in the same process; the previous one stays saved
 - `/id` — print the current session id
 
 Each session is persisted to `./sessions/<id>.json` after every turn. The id is a short 8-hex-char tag (e.g. `a3f7c102`); prefix-match works as long as it's unambiguous — same as `git checkout abc123` or `claude --resume abc`.
@@ -37,12 +37,12 @@ Each session is persisted to `./sessions/<id>.json` after every turn. The id is 
 ```text
 $ dotnet run
 Started new session: a3f7c102
-Model: claude-haiku-4-5. Commands: 'exit' (quit), 'clear' (new session), '/id' (show id).
+Model: claude-haiku-4-5. Commands: '/exit' (quit), '/clear' (new session), '/id' (show id).
 
 you > what's a monoid?
 claude > [...]
 
-you > exit
+you > /exit
 
 (session saved: a3f7c102 — resume with: dotnet run -- --resume a3f7c102)
 
@@ -86,7 +86,10 @@ AgentSession session = await agent.DeserializeSessionAsync(sessionElem);
 ## Files
 
 - [claude-code-with-maf.csproj](claude-code-with-maf.csproj) — pins `Microsoft.Agents.AI.Anthropic 1.5.0-preview.260507.1`
-- [Program.cs](Program.cs) — the whole app
+- [Program.cs](Program.cs) — entry point: arg parsing, `--list`/`--help`, session resolution
+- [Agent/AgentBuilder.cs](Agent/AgentBuilder.cs) — assembles the `AIAgent` (this is where tools/providers will be added)
+- [Harness/ChatLoop.cs](Harness/ChatLoop.cs) — interactive chat loop and `/command` dispatch
+- [Persistence/SessionStore.cs](Persistence/SessionStore.cs) — session persistence + metadata wrapper
 
 ## Notes
 
