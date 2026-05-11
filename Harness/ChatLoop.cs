@@ -63,7 +63,9 @@ public static class ChatLoop
 
         while (true)
         {
-            Console.Write("you > ");
+            // Prompt label reflects current mode so the state is visible
+            // every turn rather than only when /plan or /yolo print.
+            Console.Write(PromptLabel(approval));
             var input = Console.ReadLine();
             if (input is null) break;                                          // Ctrl+D
             if (string.IsNullOrWhiteSpace(input)) continue;
@@ -74,6 +76,14 @@ public static class ChatLoop
             if (slashResult == SlashAction.Exit) break;
             if (slashResult == SlashAction.Continue) continue;
 
+            // Step 8: in plan mode, prefix every chat turn with a reminder
+            // so the model doesn't drift over many turns. The system prompt
+            // is set once at agent construction; this lives in the user
+            // message stream so it's still in context when history grows.
+            var effectiveInput = approval.PlanMode
+                ? "[plan mode: read-only — produce a plan, do not modify or run anything] " + input
+                : input;
+
             // A single user input may require multiple RunStreamingAsync
             // calls if the model hits an approval-required tool: stream
             // emits ToolApprovalRequestContent → we prompt → we feed the
@@ -82,7 +92,7 @@ public static class ChatLoop
             // round-trip. UsageContent across iterations is folded into
             // both the per-turn accumulator and the running session total.
             Console.Write("claude > ");
-            ChatMessage nextMessage = new(ChatRole.User, input);
+            ChatMessage nextMessage = new(ChatRole.User, effectiveInput);
             var turnUsage = new UsageAccumulator();
             while (true)
             {
@@ -154,4 +164,13 @@ public static class ChatLoop
 
     private static string Truncate(string s, int max = 60) =>
         s.Length <= max ? s : s[..max] + "...";
+
+    // Step 7+8: surface yolo / plan state at the prompt so the user can
+    // see at a glance which mode they're in.
+    private static string PromptLabel(ApprovalState a) => a switch
+    {
+        { PlanMode: true } => "you (plan) > ",
+        { YoloMode: true } => "you (yolo) > ",
+        _                  => "you > ",
+    };
 }

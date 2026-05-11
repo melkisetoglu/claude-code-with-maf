@@ -67,7 +67,7 @@ The single project at the repo root grows with each step. Run [`dotnet run`](REA
 | # | Step | Status |
 |---|---|---|
 | 07 | [Slash commands (`/help`, `/clear`, `/tools`, `/cost`, `/model`, `/sessions`, `/yolo`)](tutorial/07-slash-commands.md) | ✅ done |
-| 08 | Plan mode (read-only tool subset) | _planned_ |
+| 08 | [Plan mode (read-only tool subset)](tutorial/08-plan-mode.md) | ✅ done |
 | 09 | Streaming polish: Ctrl+C interrupt, spinner, syntax highlighting | _planned_ |
 | 10 | Context compaction (`CompactionProvider`) | _planned_ |
 

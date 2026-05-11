@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A **workshop-style tutorial** that grows a Claude Code-style console agent on top of **Microsoft Agent Framework (MAF)** in .NET 9, talking to Claude via the official Anthropic SDK adapter. The single project at the repo root grows step-by-step across 17 chapters in 6 milestones (see [TUTORIAL.md](TUTORIAL.md)).
 
-Current state: **Step 7 — slash commands**. `Harness/Commands/SlashDispatch.cs` is the registry + dispatcher; `ApprovalState` (yolo + always-approve set) is shared between `/yolo` and `ApprovalPrompt`. `TurnUsage` was renamed to `UsageAccumulator` because it's now used for both per-turn and per-session totals. The approval prompt accepts `y/N/a`; `a` adds the tool to a process-local always-approve set.
+Current state: **Step 8 — plan mode**. `ApprovalState` now has `PlanMode` alongside `YoloMode` + `AlwaysApprove`. `/plan` toggles it; the approval gate auto-denies any approval-required tool while plan mode is on (`[denied: in plan mode]`). Plan and yolo are mutually exclusive (enabling one disables the other with a warning). `ChatLoop` prefixes every user message with `[plan mode: read-only — produce a plan, do not modify or run anything]` while the flag is on, so the constraint stays in context across many turns. Prompt label changes to `you (plan) > ` / `you (yolo) > ` to keep the current mode visible.
 
 This means: when adding code, the unit of work is "the next step." Each step is one sitting, ends in a clean state, gets a git tag (`step-00`, `step-01`, …) and a `[step-NN]` commit prefix so `git log --oneline` reads like a table of contents. Don't sneak future-step features into the current step.
 

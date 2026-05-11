@@ -163,6 +163,49 @@ public sealed class ApprovalPromptTests : IDisposable
         Assert.DoesNotContain("auto-approved", _capturedOut.ToString());
     }
 
+    // ---------- Step 8: PlanMode auto-deny ----------
+
+    [Fact]
+    public void Plan_mode_auto_denies_without_prompting()
+    {
+        // No stdin — if we prompted, we'd get null/EOF and deny anyway.
+        // The point is to verify the "denied: in plan mode" message appears
+        // and the fast-path is taken without reading input.
+        Console.SetIn(new StringReader(""));
+        var state = new ApprovalState { PlanMode = true };
+
+        var result = ApprovalPrompt.Ask(MakeRequest("write_file"), state);
+
+        Assert.False(result);
+        Assert.Contains("denied: in plan mode", _capturedOut.ToString());
+    }
+
+    [Fact]
+    public void Plan_mode_beats_yolo()
+    {
+        // Both flags on (shouldn't happen via UI, but defensive): plan wins.
+        Console.SetIn(new StringReader(""));
+        var state = new ApprovalState { PlanMode = true, YoloMode = true };
+
+        var result = ApprovalPrompt.Ask(MakeRequest("bash"), state);
+
+        Assert.False(result);
+        Assert.Contains("denied: in plan mode", _capturedOut.ToString());
+    }
+
+    [Fact]
+    public void Plan_mode_beats_AlwaysApprove()
+    {
+        Console.SetIn(new StringReader(""));
+        var state = new ApprovalState { PlanMode = true };
+        state.AlwaysApprove.Add("bash");
+
+        var result = ApprovalPrompt.Ask(MakeRequest("bash"), state);
+
+        Assert.False(result);
+        Assert.Contains("denied: in plan mode", _capturedOut.ToString());
+    }
+
     private static ToolApprovalRequestContent MakeRequest(
         string toolName = "simulate_action",
         params (string Key, object? Value)[] args)

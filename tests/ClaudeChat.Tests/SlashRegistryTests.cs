@@ -165,6 +165,52 @@ public sealed class SlashRegistryTests : IDisposable
         Assert.Contains("yolo: OFF", _capturedOut.ToString());
     }
 
+    // ---------- Step 8: /plan ----------
+
+    [Fact]
+    public void Plan_command_toggles_state_and_prints_status()
+    {
+        var registry = SlashRegistry.Default();
+        var approval = new ApprovalState();
+        var ctx = MakeContext(approval: approval);
+
+        registry.TryDispatch("/plan", ctx);
+        Assert.True(approval.PlanMode);
+        Assert.Contains("plan: ON", _capturedOut.ToString());
+
+        registry.TryDispatch("/plan", ctx);
+        Assert.False(approval.PlanMode);
+        Assert.Contains("plan: OFF", _capturedOut.ToString());
+    }
+
+    [Fact]
+    public void Plan_command_disables_yolo_with_warning()
+    {
+        var registry = SlashRegistry.Default();
+        var approval = new ApprovalState { YoloMode = true };
+        var ctx = MakeContext(approval: approval);
+
+        registry.TryDispatch("/plan", ctx);
+
+        Assert.True(approval.PlanMode);
+        Assert.False(approval.YoloMode);
+        Assert.Contains("turning it off", _capturedOut.ToString());
+    }
+
+    [Fact]
+    public void Yolo_command_disables_plan_with_warning()
+    {
+        var registry = SlashRegistry.Default();
+        var approval = new ApprovalState { PlanMode = true };
+        var ctx = MakeContext(approval: approval);
+
+        registry.TryDispatch("/yolo", ctx);
+
+        Assert.True(approval.YoloMode);
+        Assert.False(approval.PlanMode);
+        Assert.Contains("turning it off", _capturedOut.ToString());
+    }
+
     [Fact]
     public void Tools_command_lists_default_tools_with_approval_markers()
     {

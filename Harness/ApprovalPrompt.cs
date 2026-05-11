@@ -17,8 +17,14 @@
 //      disk persistence — Step 12's FileMemoryProvider is where that
 //      conversation belongs.
 //
+//  Step 8 adds:
+//    - PlanMode auto-deny: if ApprovalState.PlanMode is true, every
+//      approval-required tool is auto-denied with "[denied: in plan mode]".
+//      This wins over YoloMode and AlwaysApprove — plan mode is the
+//      stronger safety guarantee, so it's the first check in the chain.
+//
 //  The state object is passed in (not a static) so tests can drive it
-//  cleanly and so /yolo can flip it without a singleton.
+//  cleanly and so the slash commands can flip it without a singleton.
 // =============================================================================
 
 using Microsoft.Extensions.AI;
@@ -35,7 +41,13 @@ public static class ApprovalPrompt
             ? Format(fcc2)
             : request.ToolCall.GetType().Name;
 
-        // Pre-prompt fast paths.
+        // Pre-prompt fast paths. Order matters: plan mode beats both yolo
+        // and always-approve, because plan mode is the stronger guarantee.
+        if (state.PlanMode)
+        {
+            Console.WriteLine($"  approve {label}? [denied: in plan mode]\n");
+            return false;
+        }
         if (state.YoloMode)
         {
             Console.WriteLine($"  approve {label}? [auto-approved (yolo)]\n");

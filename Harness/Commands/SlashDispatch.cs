@@ -111,6 +111,7 @@ public sealed class SlashRegistry
             new ToolsCommand(),
             new SessionsCommand(),
             new YoloCommand(),
+            new PlanCommand(),
         };
         self = new SlashRegistry(commands);
         return self;
@@ -246,9 +247,43 @@ internal sealed class YoloCommand : ISlashCommand
     public SlashAction Run(SlashContext ctx)
     {
         ctx.Approval.YoloMode = !ctx.Approval.YoloMode;
+
+        // Yolo and plan mode are mutually exclusive — enabling yolo while in
+        // plan mode would defeat plan mode's whole purpose (auto-deny vs
+        // auto-approve are direct opposites).
+        if (ctx.Approval.YoloMode && ctx.Approval.PlanMode)
+        {
+            ctx.Approval.PlanMode = false;
+            Console.WriteLine("(note: plan mode was on; turning it off because /yolo is incompatible.)");
+        }
+
         Console.WriteLine(ctx.Approval.YoloMode
             ? "(yolo: ON — every approval-required tool will auto-approve. /yolo to toggle off.)\n"
             : "(yolo: OFF — approval prompts will return.)\n");
+        return SlashAction.Continue;
+    }
+}
+
+internal sealed class PlanCommand : ISlashCommand
+{
+    public string Name => "/plan";
+    public string Description => "Toggle plan mode (read-only; mutation tools auto-deny)";
+
+    public SlashAction Run(SlashContext ctx)
+    {
+        ctx.Approval.PlanMode = !ctx.Approval.PlanMode;
+
+        if (ctx.Approval.PlanMode && ctx.Approval.YoloMode)
+        {
+            ctx.Approval.YoloMode = false;
+            Console.WriteLine("(note: yolo was on; turning it off because /plan is incompatible.)");
+        }
+
+        Console.WriteLine(ctx.Approval.PlanMode
+            ? "(plan: ON — read-only. Mutation tools (write_file, edit_file, bash) " +
+              "will be auto-denied. Use the read tools to explore, propose a plan, " +
+              "then /plan again to exit and execute.)\n"
+            : "(plan: OFF — mutation tools are gated normally again.)\n");
         return SlashAction.Continue;
     }
 }

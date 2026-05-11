@@ -4,7 +4,7 @@ A workshop that grows a Claude Code-style console agent on top of **Microsoft Ag
 
 > **Following the workshop?** Read **[TUTORIAL.md](TUTORIAL.md)** for the step-by-step guide. This README is just "how to run it".
 
-Current state: streaming REPL with read-only navigation (`read_file`, `list_dir`, `glob`, `grep`) and approval-gated mutation tools (`write_file`, `edit_file`, `bash`), per-turn token/cost reporting, JSON-Lines file logging, optional OpenTelemetry tracing, external `agent.json` profiles (model/prompt/tools/approval rules), **slash-command dispatcher** (`/help`, `/tools`, `/cost`, `/model`, `/sessions`, `/yolo`, `/clear`, `/id`, `/exit`) with `/yolo` bypass and "always approve this tool" memory, named sessions you can list and resume — Claude Code-style.
+Current state: streaming REPL with read-only navigation (`read_file`, `list_dir`, `glob`, `grep`) and approval-gated mutation tools (`write_file`, `edit_file`, `bash`), per-turn token/cost reporting, JSON-Lines file logging, optional OpenTelemetry tracing, external `agent.json` profiles (model/prompt/tools/approval rules), slash-command dispatcher (`/help`, `/tools`, `/cost`, `/model`, `/sessions`, `/yolo`, `/clear`, `/id`, `/exit`) with `/yolo` bypass and "always approve this tool" memory, **plan mode** (`/plan` toggles read-only; mutations auto-deny), named sessions you can list and resume — Claude Code-style.
 
 ## Prerequisites
 
@@ -35,8 +35,11 @@ Commands inside the chat (all slash-prefixed):
 - `/cost` — total token use and cost for this session
 - `/sessions` — list past sessions
 - `/yolo` — toggle auto-approve-everything mode (off by default)
+- `/plan` — toggle plan mode (read-only; mutation tools auto-deny)
 
 At the approval prompt, answers are `y`/`yes` to approve once, `a`/`always` to approve and remember this tool for the rest of the session, anything else to deny.
+
+`/yolo` and `/plan` are mutually exclusive — they're opposite policies. The prompt label changes (`you (plan) > ` or `you (yolo) > `) so the current mode is visible at every turn.
 
 Each session is persisted to `./sessions/<id>.json` after every turn. The id is a short 8-hex-char tag (e.g. `a3f7c102`); prefix-match works as long as it's unambiguous — same as `git checkout abc123` or `claude --resume abc`.
 
