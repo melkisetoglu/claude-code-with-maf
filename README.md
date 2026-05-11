@@ -4,7 +4,7 @@ A workshop that grows a Claude Code-style console agent on top of **Microsoft Ag
 
 > **Following the workshop?** Read **[TUTORIAL.md](TUTORIAL.md)** for the step-by-step guide. This README is just "how to run it".
 
-Current state: streaming REPL with read-only navigation (`read_file`, `list_dir`, `glob`, `grep`) and approval-gated mutation tools (`write_file`, `edit_file`, `bash`), per-turn token/cost reporting, JSON-Lines file logging, optional OpenTelemetry tracing, named sessions you can list and resume — Claude Code-style.
+Current state: streaming REPL with read-only navigation (`read_file`, `list_dir`, `glob`, `grep`) and approval-gated mutation tools (`write_file`, `edit_file`, `bash`), per-turn token/cost reporting, JSON-Lines file logging, optional OpenTelemetry tracing, **external `agent.json` profiles** (model/prompt/tools/approval rules), named sessions you can list and resume — Claude Code-style.
 
 ## Prerequisites
 
@@ -71,7 +71,20 @@ Two test classes today, both pure (no API key, no agent): `SessionStoreTests` (N
 | `ANTHROPIC_DEPLOYMENT_NAME` | `claude-haiku-4-5` | Try `claude-sonnet-4-6` for harder questions |
 | `CLAUDECHAT_LOG_LEVEL` | `Debug` | `Trace` / `Debug` / `Information` / `Warning` / `Error` — controls `claudechat.log` verbosity |
 
-Flag: `--otel` enables the OpenTelemetry console exporter (noisy; off by default).
+Flags: `--otel` enables the OpenTelemetry console exporter (noisy; off by default). `--config <path>` loads an `agent.json` profile (otherwise `./agent.json` is auto-discovered if present).
+
+Minimal `agent.json`:
+```json
+{
+  "model": "claude-haiku-4-5",
+  "instructions": "You are a helpful assistant.",
+  "tools": {
+    "allow": ["read_file", "list_dir", "glob", "grep"],
+    "requireApproval": []
+  }
+}
+```
+All fields optional. See [tutorial/06-agent-json.md](tutorial/06-agent-json.md).
 
 ## How it works
 
@@ -107,6 +120,7 @@ AgentSession session = await agent.DeserializeSessionAsync(sessionElem);
 - [Tools/ListDir.cs](Tools/ListDir.cs), [Tools/Glob.cs](Tools/Glob.cs), [Tools/Grep.cs](Tools/Grep.cs) — read-only navigation tools (Step 2)
 - [Tools/WriteFile.cs](Tools/WriteFile.cs), [Tools/EditFile.cs](Tools/EditFile.cs), [Tools/Bash.cs](Tools/Bash.cs) — approval-gated mutation tools (Step 4)
 - [Observability/FileLogger.cs](Observability/FileLogger.cs), [Observability/Pricing.cs](Observability/Pricing.cs), [Observability/TurnUsage.cs](Observability/TurnUsage.cs) — logging + token/cost (Step 5)
+- [Config/AgentConfig.cs](Config/AgentConfig.cs) — `agent.json` schema + loader (Step 6)
 
 ## Notes
 

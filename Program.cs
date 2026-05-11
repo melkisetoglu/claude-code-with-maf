@@ -23,6 +23,7 @@ using Microsoft.Extensions.Logging;
 using OpenTelemetry;
 using OpenTelemetry.Trace;
 using ClaudeChat.Agent;
+using ClaudeChat.Config;
 using ClaudeChat.Harness;
 using ClaudeChat.Observability;
 using ClaudeChat.Persistence;
@@ -35,6 +36,7 @@ using ClaudeChat.Persistence;
 //  flags don't justify pulling in System.CommandLine.
 // -----------------------------------------------------------------------------
 string? resumeId = null;
+string? configPath = null;
 bool continueLast = false;
 bool listOnly = false;
 bool enableOtel = false;
@@ -52,6 +54,9 @@ for (int i = 0; i < args.Length; i++)
             listOnly = true; break;
         case "--otel":
             enableOtel = true; break;
+        case "--config":
+            if (i + 1 >= args.Length) { Console.Error.WriteLine("--config requires <path>"); return 1; }
+            configPath = args[++i]; break;
         case "--help" or "-h":
             PrintHelp(); return 0;
         default:
@@ -87,8 +92,36 @@ if (string.IsNullOrWhiteSpace(apiKey))
     return 1;
 }
 
+// -----------------------------------------------------------------------------
+//  Configuration — Step 6
+//
+//  Explicit --config beats auto-discovered ./agent.json. Either is optional;
+//  out of the box (no config file, no flag) the agent uses built-in defaults
+//  identical to Step 5 behaviour.
+//
+//  The model is resolved with this precedence:
+//    explicit env ANTHROPIC_DEPLOYMENT_NAME → config.model → built-in default
+//  Env wins because it's the most explicit / per-invocation knob.
+// -----------------------------------------------------------------------------
+AgentConfig? agentConfig;
+try
+{
+    agentConfig = configPath != null
+        ? AgentConfigLoader.LoadFromPath(configPath)
+        : AgentConfigLoader.TryLoadFromCwd();
+}
+catch (Exception ex)
+{
+    Console.Error.WriteLine($"Failed to load config: {ex.Message}");
+    return 1;
+}
+
 var modelEnv = Environment.GetEnvironmentVariable("ANTHROPIC_DEPLOYMENT_NAME")?.Trim();
-var model = string.IsNullOrEmpty(modelEnv) ? "claude-haiku-4-5" : modelEnv;
+// Effective model surfaced to ChatLoop (for the per-turn cost line and
+// the session metadata). Mirrors AgentBuilder's resolution.
+var model = !string.IsNullOrEmpty(modelEnv)
+    ? modelEnv
+    : agentConfig?.Model ?? AgentBuilder.DefaultModel;
 
 // -----------------------------------------------------------------------------
 //  Observability — Step 5
@@ -122,7 +155,21 @@ if (enableOtel)
         .Build();
 }
 
-AIAgent agent = AgentBuilder.Build(apiKey, model, loggerFactory, enableOtel);
+AIAgent agent;
+try
+{
+    agent = AgentBuilder.Build(
+        apiKey,
+        agentConfig,
+        loggerFactory,
+        enableOtel,
+        modelOverride: !string.IsNullOrEmpty(modelEnv) ? modelEnv : null);
+}
+catch (InvalidOperationException ex)   // unknown tool / invalid requireApproval
+{
+    Console.Error.WriteLine($"agent.json config error: {ex.Message}");
+    return 1;
+}
 
 // -----------------------------------------------------------------------------
 //  Resolve which session to use
@@ -191,11 +238,14 @@ static void PrintHelp()
           dotnet run -- --continue            Resume the most recent session
           dotnet run -- --resume <id-prefix>  Resume a specific session (prefix match)
           dotnet run -- --list                List all sessions and exit
+          dotnet run -- --config <path>       Load agent config from a specific path (Step 6)
           dotnet run -- --otel                Enable OpenTelemetry console exporter (Step 5)
           dotnet run -- --help                Show this help
+        Config:
+          ./agent.json                        Auto-discovered if present; --config overrides
         Env:
           ANTHROPIC_API_KEY                   Required
-          ANTHROPIC_DEPLOYMENT_NAME           Model id, default claude-haiku-4-5
-          CLAUDECHAT_LOG_LEVEL                Trace|Debug|Information|Warning|Error, default Information
+          ANTHROPIC_DEPLOYMENT_NAME           Model id, overrides agent.json model
+          CLAUDECHAT_LOG_LEVEL                Trace|Debug|Information|Warning|Error, default Debug
         """);
 }

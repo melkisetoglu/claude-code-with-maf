@@ -61,7 +61,7 @@ The single project at the repo root grows with each step. Run [`dotnet run`](REA
 ### Milestone 3 — Configuration
 | # | Step | Status |
 |---|---|---|
-| 06 | External `agent.json`: model, system prompt, tool allowlist, approval rules | _planned_ |
+| 06 | [External `agent.json`: model, system prompt, tool allowlist, approval rules](tutorial/06-agent-json.md) | ✅ done |
 
 ### Milestone 4 — Harness UX (the Claude Code feel)
 | # | Step | Status |
