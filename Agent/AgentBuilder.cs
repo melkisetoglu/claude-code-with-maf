@@ -129,6 +129,25 @@ public static class AgentBuilder
     }
 
     /// <summary>
+    /// Lightweight introspection over the resolved tool set, for the
+    /// `/tools` slash command in Step 7. Each entry is (name, requires-
+    /// approval) — readers shouldn't have to reach into the AIAgent to
+    /// learn what tools are available.
+    /// </summary>
+    public sealed record ToolInfo(string Name, bool RequiresApproval);
+
+    public static IReadOnlyList<ToolInfo> ResolveToolInfo(ToolsConfig? tools)
+    {
+        var resolved = ResolveTools(tools);
+        return resolved.Select(t => t switch
+        {
+            ApprovalRequiredAIFunction approved => new ToolInfo(((AIFunction)approved).Name, true),
+            AIFunction fn                      => new ToolInfo(fn.Name, false),
+            _ => throw new InvalidOperationException("unexpected tool type"),
+        }).ToList();
+    }
+
+    /// <summary>
     /// Walks the config's tools.allow list (default: every registered tool)
     /// and wraps any entry in tools.requireApproval (default: write/edit/bash
     /// intersected with allow) with ApprovalRequiredAIFunction. Unknown tool

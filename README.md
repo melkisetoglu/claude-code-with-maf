@@ -4,7 +4,7 @@ A workshop that grows a Claude Code-style console agent on top of **Microsoft Ag
 
 > **Following the workshop?** Read **[TUTORIAL.md](TUTORIAL.md)** for the step-by-step guide. This README is just "how to run it".
 
-Current state: streaming REPL with read-only navigation (`read_file`, `list_dir`, `glob`, `grep`) and approval-gated mutation tools (`write_file`, `edit_file`, `bash`), per-turn token/cost reporting, JSON-Lines file logging, optional OpenTelemetry tracing, **external `agent.json` profiles** (model/prompt/tools/approval rules), named sessions you can list and resume — Claude Code-style.
+Current state: streaming REPL with read-only navigation (`read_file`, `list_dir`, `glob`, `grep`) and approval-gated mutation tools (`write_file`, `edit_file`, `bash`), per-turn token/cost reporting, JSON-Lines file logging, optional OpenTelemetry tracing, external `agent.json` profiles (model/prompt/tools/approval rules), **slash-command dispatcher** (`/help`, `/tools`, `/cost`, `/model`, `/sessions`, `/yolo`, `/clear`, `/id`, `/exit`) with `/yolo` bypass and "always approve this tool" memory, named sessions you can list and resume — Claude Code-style.
 
 ## Prerequisites
 
@@ -26,9 +26,17 @@ dotnet run -- --help                # usage
 Short flags: `-c`, `-r`, `-l`, `-h`.
 
 Commands inside the chat (all slash-prefixed):
+- `/help` — list every command
 - `/exit` / `/quit` / Ctrl+D — quit (session is saved)
 - `/clear` — start a new session in the same process; the previous one stays saved
 - `/id` — print the current session id
+- `/model` — print the current model
+- `/tools` — list registered tools and which require approval
+- `/cost` — total token use and cost for this session
+- `/sessions` — list past sessions
+- `/yolo` — toggle auto-approve-everything mode (off by default)
+
+At the approval prompt, answers are `y`/`yes` to approve once, `a`/`always` to approve and remember this tool for the rest of the session, anything else to deny.
 
 Each session is persisted to `./sessions/<id>.json` after every turn. The id is a short 8-hex-char tag (e.g. `a3f7c102`); prefix-match works as long as it's unambiguous — same as `git checkout abc123` or `claude --resume abc`.
 
@@ -114,7 +122,8 @@ AgentSession session = await agent.DeserializeSessionAsync(sessionElem);
 - [Program.cs](Program.cs) — entry point: arg parsing, `--list`/`--help`, session resolution
 - [Agent/AgentBuilder.cs](Agent/AgentBuilder.cs) — assembles the `AIAgent` (this is where tools/providers will be added)
 - [Harness/ChatLoop.cs](Harness/ChatLoop.cs) — interactive chat loop, `/command` dispatch, approval round-trip
-- [Harness/ApprovalPrompt.cs](Harness/ApprovalPrompt.cs) — y/N gate for approval-required tools (Step 3)
+- [Harness/ApprovalPrompt.cs](Harness/ApprovalPrompt.cs) — y/N/a gate for approval-required tools (Step 3 + yolo & always from Step 7)
+- [Harness/Commands/SlashDispatch.cs](Harness/Commands/SlashDispatch.cs), [Harness/Commands/ApprovalState.cs](Harness/Commands/ApprovalState.cs) — slash-command registry + shared approval state (Step 7)
 - [Persistence/SessionStore.cs](Persistence/SessionStore.cs) — session persistence + metadata wrapper
 - [Tools/ReadFile.cs](Tools/ReadFile.cs) — the `read_file` function tool
 - [Tools/ListDir.cs](Tools/ListDir.cs), [Tools/Glob.cs](Tools/Glob.cs), [Tools/Grep.cs](Tools/Grep.cs) — read-only navigation tools (Step 2)

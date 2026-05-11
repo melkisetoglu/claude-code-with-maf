@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A **workshop-style tutorial** that grows a Claude Code-style console agent on top of **Microsoft Agent Framework (MAF)** in .NET 9, talking to Claude via the official Anthropic SDK adapter. The single project at the repo root grows step-by-step across 17 chapters in 6 milestones (see [TUTORIAL.md](TUTORIAL.md)).
 
-Current state: **Step 6 — external `agent.json`** (model, instructions, tool allowlist, approval rules now data instead of code). `Config/AgentConfig.cs` loads `./agent.json` automatically or `--config <path>`. `AgentBuilder.ToolRegistry` is the named source of truth for tool factories; `ResolveTools` filters by `allow` and wraps with `ApprovalRequiredAIFunction` per `requireApproval`. Precedence: `ANTHROPIC_DEPLOYMENT_NAME` env → config.model → built-in default.
+Current state: **Step 7 — slash commands**. `Harness/Commands/SlashDispatch.cs` is the registry + dispatcher; `ApprovalState` (yolo + always-approve set) is shared between `/yolo` and `ApprovalPrompt`. `TurnUsage` was renamed to `UsageAccumulator` because it's now used for both per-turn and per-session totals. The approval prompt accepts `y/N/a`; `a` adds the tool to a process-local always-approve set.
 
 This means: when adding code, the unit of work is "the next step." Each step is one sitting, ends in a clean state, gets a git tag (`step-00`, `step-01`, …) and a `[step-NN]` commit prefix so `git log --oneline` reads like a table of contents. Don't sneak future-step features into the current step.
 
@@ -79,11 +79,12 @@ claude-code-with-maf/
 │   └── Delegating/                # ToolApprovalAgent, LoggingAgent (steps 3, 5, 14)
 ├── Tools/                         # function tools (steps 1–4)
 ├── Providers/                     # MAF providers (steps 10–15)
-├── Harness/                       # the "Claude Code feel" — NOT MAF (steps 7–9)
-│   ├── ChatLoop.cs                # interactive chat loop + /command dispatch
-│   ├── Commands/                  # /help, /clear, /tools, /cost, /model (step 7)
-│   ├── Streaming.cs               # spinner, Ctrl+C, syntax highlighting (step 9)
-│   └── PlanMode.cs                # (step 8)
+├── Harness/                       # the "Claude Code feel" — NOT MAF
+│   ├── ChatLoop.cs                # interactive chat loop, hands slash inputs to the registry
+│   ├── ApprovalPrompt.cs          # y/N/a gate (step 3 + step 7 yolo/always)
+│   └── Commands/                  # slash registry + every command (step 7)
+│       ├── SlashDispatch.cs       #   ISlashCommand + SlashContext + SlashRegistry + commands
+│       └── ApprovalState.cs       #   YoloMode + AlwaysApprove memory
 ├── Persistence/                   # session storage + metadata wrapper
 ├── Observability/                 # logging, tracing, pricing, token accumulator (step 5)
 ├── Config/                        # agent.json loader (step 6)

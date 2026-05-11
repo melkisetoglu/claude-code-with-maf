@@ -1,5 +1,6 @@
 // =============================================================================
-//  ApprovalPromptTests — covers the y/N decision logic of the gate.
+//  ApprovalPromptTests — covers the y/N/a decision logic, yolo bypass, and
+//  the AlwaysApprove memory.
 //
 //  Console.In and Console.Out are process-global, so these tests run in a
 //  serial collection (no parallelism with other Console-sensitive tests)
@@ -7,6 +8,7 @@
 // =============================================================================
 
 using ClaudeChat.Harness;
+using ClaudeChat.Harness.Commands;
 using Microsoft.Extensions.AI;
 
 namespace ClaudeChat.Tests;
@@ -42,7 +44,7 @@ public sealed class ApprovalPromptTests : IDisposable
     {
         Console.SetIn(new StringReader(answer + "\n"));
 
-        var result = ApprovalPrompt.Ask(MakeRequest());
+        var result = ApprovalPrompt.Ask(MakeRequest(), new ApprovalState());
 
         Assert.True(result);
         Assert.Contains("approved", _capturedOut.ToString());
@@ -59,7 +61,7 @@ public sealed class ApprovalPromptTests : IDisposable
     {
         Console.SetIn(new StringReader(answer + "\n"));
 
-        var result = ApprovalPrompt.Ask(MakeRequest());
+        var result = ApprovalPrompt.Ask(MakeRequest(), new ApprovalState());
 
         Assert.False(result);
         Assert.Contains("denied", _capturedOut.ToString());
@@ -68,10 +70,9 @@ public sealed class ApprovalPromptTests : IDisposable
     [Fact]
     public void Denies_on_eof()
     {
-        // StringReader with empty content returns null on first ReadLine.
         Console.SetIn(new StringReader(""));
 
-        var result = ApprovalPrompt.Ask(MakeRequest());
+        var result = ApprovalPrompt.Ask(MakeRequest(), new ApprovalState());
 
         Assert.False(result);
     }
@@ -81,12 +82,85 @@ public sealed class ApprovalPromptTests : IDisposable
     {
         Console.SetIn(new StringReader("n\n"));
 
-        ApprovalPrompt.Ask(MakeRequest("write_file", ("path", "README.md"), ("contents", "x")));
+        ApprovalPrompt.Ask(
+            MakeRequest("write_file", ("path", "README.md"), ("contents", "x")),
+            new ApprovalState());
 
         var output = _capturedOut.ToString();
         Assert.Contains("write_file", output);
         Assert.Contains("path=\"README.md\"", output);
         Assert.Contains("contents=\"x\"", output);
+    }
+
+    // ---------- Step 7: yolo bypass ----------
+
+    [Fact]
+    public void Yolo_mode_auto_approves_without_prompting()
+    {
+        // No stdin set up — if we prompted, we'd get null and deny.
+        // So if approval comes back true here, yolo bypassed the prompt.
+        Console.SetIn(new StringReader(""));
+        var state = new ApprovalState { YoloMode = true };
+
+        var result = ApprovalPrompt.Ask(MakeRequest("bash"), state);
+
+        Assert.True(result);
+        Assert.Contains("auto-approved (yolo)", _capturedOut.ToString());
+    }
+
+    // ---------- Step 7: AlwaysApprove memory ----------
+
+    [Fact]
+    public void Always_answer_remembers_tool_for_future_calls()
+    {
+        Console.SetIn(new StringReader("a\n"));
+        var state = new ApprovalState();
+
+        var firstResult = ApprovalPrompt.Ask(MakeRequest("write_file"), state);
+
+        Assert.True(firstResult);
+        Assert.Contains("write_file", state.AlwaysApprove);
+        Assert.Contains("remembering", _capturedOut.ToString());
+    }
+
+    [Fact]
+    public void Always_answer_full_word_works_too()
+    {
+        Console.SetIn(new StringReader("always\n"));
+        var state = new ApprovalState();
+
+        var result = ApprovalPrompt.Ask(MakeRequest("bash"), state);
+
+        Assert.True(result);
+        Assert.Contains("bash", state.AlwaysApprove);
+    }
+
+    [Fact]
+    public void Tool_in_AlwaysApprove_set_auto_approves_subsequent_calls()
+    {
+        // No stdin — if we prompted, this would deny.
+        Console.SetIn(new StringReader(""));
+        var state = new ApprovalState();
+        state.AlwaysApprove.Add("write_file");
+
+        var result = ApprovalPrompt.Ask(MakeRequest("write_file"), state);
+
+        Assert.True(result);
+        Assert.Contains("auto-approved (always)", _capturedOut.ToString());
+    }
+
+    [Fact]
+    public void AlwaysApprove_does_not_affect_other_tools()
+    {
+        Console.SetIn(new StringReader("n\n"));
+        var state = new ApprovalState();
+        state.AlwaysApprove.Add("write_file");
+
+        // Different tool than the one in AlwaysApprove — should still prompt.
+        var result = ApprovalPrompt.Ask(MakeRequest("bash"), state);
+
+        Assert.False(result);
+        Assert.DoesNotContain("auto-approved", _capturedOut.ToString());
     }
 
     private static ToolApprovalRequestContent MakeRequest(
