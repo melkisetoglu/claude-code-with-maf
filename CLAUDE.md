@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A **workshop-style tutorial** that grows a Claude Code-style console agent on top of **Microsoft Agent Framework (MAF)** in .NET 9, talking to Claude via the official Anthropic SDK adapter. The single project at the repo root grows step-by-step across 17 chapters in 6 milestones (see [TUTORIAL.md](TUTORIAL.md)).
 
-Current state: **Step 4 — mutation tools** (`write_file`, `edit_file`, `bash` — every call routes through Step 3's `ToolApprovalAgent` gate; `simulate_action` deleted now that real mutators exist).
+Current state: **Step 5 — observability** (`LoggingAgent` writes JSON-Lines to `claudechat.log` by default; `OpenTelemetryAgent` opt-in via `--otel`; per-turn `(turn: N in + M out, $X.XXXX)` line read from `UsageContent`). Default log level is `Debug` because that's where MAF's `LoggingAgent` emits.
 
 This means: when adding code, the unit of work is "the next step." Each step is one sitting, ends in a clean state, gets a git tag (`step-00`, `step-01`, …) and a `[step-NN]` commit prefix so `git log --oneline` reads like a table of contents. Don't sneak future-step features into the current step.
 
@@ -85,9 +85,11 @@ claude-code-with-maf/
 │   ├── Streaming.cs               # spinner, Ctrl+C, syntax highlighting (step 9)
 │   └── PlanMode.cs                # (step 8)
 ├── Persistence/                   # session storage + metadata wrapper
+├── Observability/                 # logging, tracing, pricing, token accumulator (step 5)
 ├── Config/                        # agent.json loader (step 6)
 ├── tutorial/                      # one .md per step, filename matches step number
 ├── sessions/                      # gitignored runtime data (note: lowercase!)
+├── claudechat.log                 # gitignored runtime log (step 5)
 └── tests/                         # if/when added — separate .csproj
 ```
 

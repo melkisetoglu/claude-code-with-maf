@@ -13,6 +13,9 @@ obj/
 # User data — sessions contain conversation history with Claude. Never commit.
 sessions/
 
+# Log files written by Observability/FileLogger.cs (Step 5).
+*.log
+
 # Local secrets / env overrides
 .env
 *.env.local

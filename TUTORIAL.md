@@ -56,7 +56,7 @@ The single project at the repo root grows with each step. Run [`dotnet run`](REA
 
 | # | Step | Status |
 |---|---|---|
-| 05 | Logging + OpenTelemetry + per-turn token/cost | _planned_ |
+| 05 | [Logging + OpenTelemetry + per-turn token/cost](tutorial/05-observability.md) | ✅ done |
 
 ### Milestone 3 — Configuration
 | # | Step | Status |

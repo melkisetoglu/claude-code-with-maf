@@ -19,8 +19,12 @@
 // =============================================================================
 
 using Microsoft.Agents.AI;
+using Microsoft.Extensions.Logging;
+using OpenTelemetry;
+using OpenTelemetry.Trace;
 using ClaudeChat.Agent;
 using ClaudeChat.Harness;
+using ClaudeChat.Observability;
 using ClaudeChat.Persistence;
 
 // -----------------------------------------------------------------------------
@@ -33,6 +37,7 @@ using ClaudeChat.Persistence;
 string? resumeId = null;
 bool continueLast = false;
 bool listOnly = false;
+bool enableOtel = false;
 
 for (int i = 0; i < args.Length; i++)
 {
@@ -45,6 +50,8 @@ for (int i = 0; i < args.Length; i++)
             resumeId = args[++i]; break;
         case "--list" or "-l":
             listOnly = true; break;
+        case "--otel":
+            enableOtel = true; break;
         case "--help" or "-h":
             PrintHelp(); return 0;
         default:
@@ -83,7 +90,39 @@ if (string.IsNullOrWhiteSpace(apiKey))
 var modelEnv = Environment.GetEnvironmentVariable("ANTHROPIC_DEPLOYMENT_NAME")?.Trim();
 var model = string.IsNullOrEmpty(modelEnv) ? "claude-haiku-4-5" : modelEnv;
 
-AIAgent agent = AgentBuilder.Build(apiKey, model);
+// -----------------------------------------------------------------------------
+//  Observability — Step 5
+//
+//  Logging: a custom JSON-Lines file writer (Observability/FileLogger.cs).
+//  Level controlled by CLAUDECHAT_LOG_LEVEL (default Information).
+//
+//  Tracing: OpenTelemetry with the console exporter, only when --otel was
+//  passed. The console exporter dumps spans into stdout, which is noisy but
+//  the only zero-config exporter that works without an external collector.
+//  Swap for OTLP in production.
+// -----------------------------------------------------------------------------
+// Default Debug because MAF's LoggingAgent emits its per-Run* trace at
+// Debug; Information would leave the log file empty in normal use, which
+// defeats the workshop's point. Override via env if you want it quieter.
+var logLevelEnv = Environment.GetEnvironmentVariable("CLAUDECHAT_LOG_LEVEL")?.Trim();
+var logLevel = Enum.TryParse<LogLevel>(logLevelEnv, ignoreCase: true, out var lvl)
+    ? lvl : LogLevel.Debug;
+
+using var fileLoggerProvider = new FileLoggerProvider("claudechat.log", logLevel);
+using var loggerFactory = LoggerFactory.Create(b => b
+    .SetMinimumLevel(logLevel)
+    .AddProvider(fileLoggerProvider));
+
+TracerProvider? tracerProvider = null;
+if (enableOtel)
+{
+    tracerProvider = Sdk.CreateTracerProviderBuilder()
+        .AddSource(AgentBuilder.OtelSourceName)
+        .AddConsoleExporter()
+        .Build();
+}
+
+AIAgent agent = AgentBuilder.Build(apiKey, model, loggerFactory, enableOtel);
 
 // -----------------------------------------------------------------------------
 //  Resolve which session to use
@@ -141,6 +180,7 @@ else
 }
 
 await ChatLoop.RunAsync(agent, model, sessionId, session, createdAt, preview);
+tracerProvider?.Dispose();
 return 0;
 
 static void PrintHelp()
@@ -151,6 +191,11 @@ static void PrintHelp()
           dotnet run -- --continue            Resume the most recent session
           dotnet run -- --resume <id-prefix>  Resume a specific session (prefix match)
           dotnet run -- --list                List all sessions and exit
+          dotnet run -- --otel                Enable OpenTelemetry console exporter (Step 5)
           dotnet run -- --help                Show this help
+        Env:
+          ANTHROPIC_API_KEY                   Required
+          ANTHROPIC_DEPLOYMENT_NAME           Model id, default claude-haiku-4-5
+          CLAUDECHAT_LOG_LEVEL                Trace|Debug|Information|Warning|Error, default Information
         """);
 }

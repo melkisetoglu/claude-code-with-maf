@@ -23,6 +23,7 @@
 
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
+using ClaudeChat.Observability;
 using ClaudeChat.Persistence;
 
 namespace ClaudeChat.Harness;
@@ -71,12 +72,21 @@ public static class ChatLoop
             // emits ToolApprovalRequestContent → we prompt → we feed the
             // ToolApprovalResponseContent back as a follow-up message →
             // stream resumes. Each iteration of the inner loop is one such
-            // round-trip.
+            // round-trip. Step 5 also folds UsageContent across iterations
+            // so the per-turn token/cost line is honest.
             Console.Write("claude > ");
             ChatMessage nextMessage = new(ChatRole.User, input);
+            var usage = new TurnUsage();
             while (true)
             {
                 var pendingApprovals = new List<ToolApprovalRequestContent>();
+
+                // Track whether the last byte we wrote to stdout was a newline.
+                // Some text chunks naturally end with '\n'; some don't. We want
+                // exactly one newline at the end of the stream so the per-turn
+                // summary (and --otel span dumps that fire on enumerator
+                // disposal) start on a fresh line.
+                bool endsOnNewline = true;
 
                 await foreach (var update in agent.RunStreamingAsync(nextMessage, session))
                 {
@@ -84,18 +94,34 @@ public static class ChatLoop
                     {
                         switch (content)
                         {
-                            case TextContent text:
+                            case TextContent text when text.Text.Length > 0:
                                 Console.Write(text.Text);
+                                endsOnNewline = text.Text[^1] == '\n';
                                 break;
                             case FunctionCallContent call:
                                 // Render every argument as key="value", truncating long
                                 // values so a multi-line regex doesn't dump into the terminal.
                                 Console.WriteLine($"\n[{FormatCall(call)}]");
+                                endsOnNewline = true;
                                 break;
                             case ToolApprovalRequestContent req:
                                 pendingApprovals.Add(req);
                                 break;
+                            case UsageContent uc:
+                                usage.Add(uc.Details);
+                                break;
                         }
+                    }
+
+                    // Close the streamed text with a newline AS SOON AS the
+                    // model signals the turn is done — BEFORE the enumerator
+                    // disposes, otherwise --otel's console exporter dumps span
+                    // output right against the last text chunk:
+                    //   "...The capital of France is Paris.Activity.TraceId: ..."
+                    if (update.FinishReason is not null && !endsOnNewline)
+                    {
+                        Console.WriteLine();
+                        endsOnNewline = true;
                     }
                 }
 
@@ -112,7 +138,10 @@ public static class ChatLoop
                 }
                 nextMessage = new ChatMessage(ChatRole.User, responses);
             }
-            Console.WriteLine("\n");
+            // No explicit WriteLine here — the FinishReason check inside the
+            // stream already terminates the reply with a newline.
+            Console.WriteLine(usage.FormatSummary(model));
+            Console.WriteLine();
 
             // Lazily set a preview the first time we have user input — this is what
             // shows up in `--list` so you can recognize the session.

@@ -8,30 +8,41 @@
 //          the gate; deleted in Step 4 in favour of real mutators.
 //  Step 4: + write_file, edit_file, bash — the mutation tools, every one
 //          marked ApprovalRequiredAIFunction. The agent stops being read-only.
+//  Step 5: + LoggingAgent (always on) + OpenTelemetryAgent (opt-in via --otel).
+//          Observability for the runtime, with token/cost reported per-turn
+//          from UsageContent in the stream (see ChatLoop).
 //  Future steps wire more in here without touching Program.cs:
-//    - Step 5:   LoggingAgent + OpenTelemetry
 //    - Step 10:  CompactionProvider
 //    - Step 11+: AgentSkillsProvider, FileMemoryProvider, TodoProvider, …
 //
-//  This is also where the **delegating-agent pattern** first appears in the
-//  workshop. ToolApprovalAgent inherits from DelegatingAIAgent — it wraps
-//  another AIAgent and intercepts the streaming flow, splitting any tool
-//  call marked approval-required into a request/response handshake instead
-//  of auto-invoking. Steps 5 (LoggingAgent) and 14 (hooks/middleware) layer
-//  more delegating agents on top — same pattern, different concern.
+//  Wrap order is inside-out: raw model → LoggingAgent → OpenTelemetryAgent →
+//  ToolApprovalAgent. The principle is "outer is closer to the user":
+//    - LoggingAgent logs raw model behaviour AS IT HAPPENS — including the
+//      approval-response messages the gate forwards back, so the trace is
+//      complete.
+//    - OpenTelemetryAgent traces the same boundary. (Step 14 may move it.)
+//    - ToolApprovalAgent intercepts at the user-visible boundary so the
+//      gate is the last thing between the model and the world.
 // =============================================================================
 
 using System.Text.Json;
 using Anthropic;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Logging;
 using ClaudeChat.Tools;
 
 namespace ClaudeChat.Agent;
 
 public static class AgentBuilder
 {
-    public static AIAgent Build(string apiKey, string model)
+    public const string OtelSourceName = "ClaudeChat";
+
+    public static AIAgent Build(
+        string apiKey,
+        string model,
+        ILoggerFactory loggerFactory,
+        bool enableOtel = false)
     {
         AnthropicClient client = new() { ApiKey = apiKey };
 
@@ -75,6 +86,17 @@ public static class AgentBuilder
                           "Write specific, narrow shell commands — they are easier for the user " +
                           "to read and approve.",
             tools: tools);
+
+        // Step 5: log every Run* call at the model boundary.
+        inner = new LoggingAgent(inner, loggerFactory.CreateLogger("ClaudeChat.Agent"));
+
+        // Step 5 (opt-in): tracing. Spans emit to whatever TracerProvider
+        // the caller wired up — for the workshop, that's the console
+        // exporter set up in Program.cs when --otel is passed.
+        if (enableOtel)
+        {
+            inner = new OpenTelemetryAgent(inner, OtelSourceName);
+        }
 
         // Wrap once with the approval gate. Anything marked
         // ApprovalRequiredAIFunction will route through here.
