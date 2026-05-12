@@ -15,8 +15,12 @@
 //          (typically loaded from agent.json). The hardcoded list is now a
 //          named registry — config picks which entries to register and which
 //          to wrap with ApprovalRequiredAIFunction.
+//  Step 10: + CompactionProvider — the workshop's first AIContextProvider.
+//          Construction switched from the AsAIAgent(model, instructions, …)
+//          shortcut to AsAIAgent(ChatClientAgentOptions) so we can pass an
+//          AIContextProviders list. Model/instructions/tools migrated to
+//          options.ChatOptions (ModelId / Instructions / Tools).
 //  Future steps wire more in here without touching Program.cs:
-//    - Step 10:  CompactionProvider
 //    - Step 11+: AgentSkillsProvider, FileMemoryProvider, TodoProvider, …
 //
 //  Wrap order is inside-out: raw model → LoggingAgent → OpenTelemetryAgent →
@@ -32,6 +36,7 @@
 using System.Text.Json;
 using Anthropic;
 using Microsoft.Agents.AI;
+using Microsoft.Agents.AI.Compaction;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using ClaudeChat.Config;
@@ -43,6 +48,16 @@ public static class AgentBuilder
 {
     public const string OtelSourceName = "ClaudeChat";
     public const string DefaultModel = "claude-haiku-4-5";
+
+    // Step 10: ContextWindowCompactionStrategy needs to know the model's
+    // input/output budgets so it can compute when to start compacting.
+    // Hardcoded for Claude Haiku 4.5 / Sonnet 4.6 (they share these). A
+    // production setup would table-drive this per model (stretch in the
+    // chapter). Crossing 80% triggers truncation; 50% triggers tool-result
+    // eviction; both are the strategy's defaults.
+    public const int CompactionContextWindowTokens = 200_000;
+    public const int CompactionMaxOutputTokens     = 8_000;
+    public const string CompactionStateKey         = "ClaudeChat.Compaction";
 
     public const string DefaultInstructions =
         "You are a helpful assistant. Keep replies concise. " +
@@ -99,11 +114,44 @@ public static class AgentBuilder
 
         var tools = ResolveTools(config?.Tools);
 
-        AIAgent inner = client.AsAIAgent(
-            model: model,
-            name: "ClaudeChat",
-            instructions: instructions,
-            tools: tools);
+        // Step 10: switching from the AsAIAgent(model, instructions, …)
+        // shortcut to the AsAIAgent(ChatClientAgentOptions) overload because
+        // that's the path that accepts AIContextProviders. Model, instructions
+        // and tools all move into options.ChatOptions; the new provider list
+        // gets the CompactionProvider attached.
+        //
+        // ContextWindowCompactionStrategy is the workshop-friendly default:
+        // zero-LLM (no extra cost), model-window-aware, two-stage built in
+        // (drops tool results at 50% of input budget, truncates at 80%).
+        // Other strategies (Summarization, SlidingWindow, Truncation) are
+        // available — see the chapter for when each fits.
+        //
+        // CompactionProvider + ContextWindowCompactionStrategy are
+        // [Experimental] (MAAI001) like ToolApprovalAgent; suppress here
+        // rather than project-wide so a MAF rename will reintroduce the
+        // warning and flag the migration.
+#pragma warning disable MAAI001
+        var compactionProvider = new CompactionProvider(
+            new ContextWindowCompactionStrategy(
+                maxContextWindowTokens: CompactionContextWindowTokens,
+                maxOutputTokens:        CompactionMaxOutputTokens),
+            stateKey: CompactionStateKey,
+            loggerFactory: loggerFactory);
+#pragma warning restore MAAI001
+
+        var options = new ChatClientAgentOptions
+        {
+            Name = "ClaudeChat",
+            ChatOptions = new ChatOptions
+            {
+                ModelId      = model,
+                Instructions = instructions,
+                Tools        = tools,
+            },
+            AIContextProviders = new AIContextProvider[] { compactionProvider },
+        };
+
+        AIAgent inner = client.AsAIAgent(options);
 
         // Step 5: log every Run* call at the model boundary.
         inner = new LoggingAgent(inner, loggerFactory.CreateLogger("ClaudeChat.Agent"));

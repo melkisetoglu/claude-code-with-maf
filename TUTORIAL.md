@@ -69,7 +69,7 @@ The single project at the repo root grows with each step. Run [`dotnet run`](REA
 | 07 | [Slash commands (`/help`, `/clear`, `/tools`, `/cost`, `/model`, `/sessions`, `/yolo`)](tutorial/07-slash-commands.md) | ✅ done |
 | 08 | [Plan mode (read-only tool subset)](tutorial/08-plan-mode.md) | ✅ done |
 | 09 | [Streaming polish: Ctrl+C interrupt, spinner, code-block colour](tutorial/09-streaming-polish.md) | ✅ done |
-| 10 | Context compaction (`CompactionProvider`) | _planned_ |
+| 10 | [Context compaction (`CompactionProvider`)](tutorial/10-compaction.md) | ✅ done |
 
 ### Milestone 5 — Memory & workflow
 | # | Step | Status |
