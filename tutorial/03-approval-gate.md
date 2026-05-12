@@ -2,6 +2,8 @@
 
 > *Goal: separate "the model decided to do this" from "the action happened." A per-call human checkpoint that stands between the model and any tool we don't fully trust.*
 
+> **Retrospective heads-up (added after Step 14).** This step hand-wires `ToolApprovalAgent` with a raw `new ToolApprovalAgent(inner, JsonSerializerOptions.Default)` constructor call. MAF ships `ToolApprovalAgentBuilderExtensions.UseToolApproval(jsonOpts)` on the `AIAgentBuilder` fluent pipeline — same outcome, one line. We didn't know until Step 14, which discovers `AIAgentBuilder` and refactors the wrap chain. **This chapter stands as-is** — the delegating-agent pattern it teaches is the foundation that `.UseToolApproval` is sugar over, and you need to understand the wrap before you understand the builder. In production code, prefer the fluent form. Full discussion in [Step 14's chapter](14-middleware.md).
+
 This is the prerequisite for Step 4. Mutation tools (`write_file`, `edit_file`, `bash`) can destroy your repo, your home directory, or production. Auto-invocation means the model decides → it runs. Without a gate, a confused model that thinks it should `rm -rf node_modules` to "clean up" will do it before the next streamed token. The gate is the boundary that makes mutation safe enough to land.
 
 It also introduces the **delegating-agent pattern** — the most important MAF idiom we haven't taught yet. Steps 5 (`LoggingAgent`), 14 (hooks/middleware) layer more delegating agents on top of this one. *Wrap an `AIAgent` to add cross-cutting behavior without changing what's inside.*

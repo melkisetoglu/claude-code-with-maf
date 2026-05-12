@@ -2,6 +2,8 @@
 
 > *Goal: know what the agent did, how often, and what it cost — before the harness gets too complex to debug without it.*
 
+> **Retrospective heads-up (added after Step 14).** This step hand-wires `LoggingAgent` and `OpenTelemetryAgent` with raw constructor calls (`new LoggingAgent(inner, logger)` and `new OpenTelemetryAgent(inner, source)`). MAF ships `LoggingAgentBuilderExtensions.UseLogging(loggerFactory, configure)` and `OpenTelemetryAgentBuilderExtensions.UseOpenTelemetry(sourceName, configure)` on the `AIAgentBuilder` fluent pipeline — same outcomes, one line each. We didn't know until Step 14, which refactors the wrap chain to the builder shape. **This chapter stands as-is** — the imperative wrap-and-reassign form makes the delegating-agent layering visible in a way the fluent form hides, and that's worth seeing once before trusting the sugar. In production code, prefer the fluent form. Full discussion in [Step 14's chapter](14-middleware.md).
+
 Steps 6 onwards will pile on configuration, slash commands, plan mode, compaction, memory, sub-agents, MCP. Debugging any of that without a log is misery, and adding observability after-the-fact means you can't go back and ask *what happened last Tuesday?* Step 5 lands the cheapest scaffolding that answers that question.
 
 Three things ship together because they share a theme but live at different layers:
