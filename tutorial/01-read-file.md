@@ -2,6 +2,8 @@
 
 > *Goal: the model can read your files. This is the step where the chat wrapper becomes an agent.*
 
+> **Retrospective heads-up (added after Step 12).** MAF ships `FileAccessProvider`, an `AIContextProvider` that auto-registers `FileAccess_ReadFile`, `_SaveFile`, `_ListFiles`, `_SearchFiles`, and `_DeleteFile` when you attach it. Steps 1–2's hand-written `read_file`/`list_dir`/`grep`/`write_file` could have been a one-line provider attach. **We're writing them by hand here anyway** — the `AIFunction` shape this teaches applies to every tool the framework *doesn't* ship (Step 4's `edit_file` and `bash` are workshop originals; future steps add more). If you're picking up this stack for production, attach `FileAccessProvider` for the read/write/list/search basics and only hand-roll the ones MAF doesn't cover. The full discussion is in [Step 12's "Where the seams are"](12-memory.md#where-the-seams-are). This chapter stands as-is — what it teaches you still need, just not for everything.
+
 In Step 0 the model could only talk *about* code; it had to guess at what your files actually contained. That's chat. In Step 1 we register a single function — `read_file` — and the model decides when to call it, what path to pass, and how to weave the result into its reply. **That decision-making loop is what "agent" means.** Everything else in this tutorial — more tools, approval gates, sub-agents, MCP — is variations on this same loop.
 
 ## What you'll have at the end
