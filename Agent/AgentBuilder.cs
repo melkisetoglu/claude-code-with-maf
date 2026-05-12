@@ -37,6 +37,15 @@
 //          shape changes from AIAgent to a small record so the harness
 //          can call provider.GetAllTodosAsync(session) for /todos —
 //          first provider whose read-side API matters to the harness.
+//  Step 15: + SubAgentsProvider — fifth AIContextProvider. Configures
+//          one read-only "researcher" sub-agent the main agent can
+//          delegate to. Auto-registers 6 tools (SubAgents_StartTask /
+//          _WaitForFirstCompletion / _GetTaskResults / _GetAllTasks /
+//          _ContinueTask / _ClearCompletedTask). Async-by-design: the
+//          model starts tasks, waits, and reads results. Required two
+//          version pins in the csproj (Microsoft.Extensions.AI[.Abstractions]
+//          @ 10.5.1 + Anthropic SDK @ 12.20.1) to remove stale-API
+//          references — see csproj comment for the trail.
 //  Step 14: switch the wrap chain from imperative constructor calls to
 //          the framework's AIAgentBuilder + .UseX() extension methods.
 //          Same final behaviour, fluent shape:
@@ -108,6 +117,11 @@ public static class AgentBuilder
     // opt-in convention as skills/ — present-means-on. Gitignored: the
     // model writes user-specific notes here.
     public const string MemoryDirectoryName = "memory";
+
+    // Step 15: the one sub-agent we configure (a read-only researcher).
+    // Constant so the slash command and tests can refer to the same name
+    // without string-typing it.
+    public const string ResearcherAgentName = "researcher";
 
     public const string DefaultInstructions =
         "You are a helpful assistant. Keep replies concise. " +
@@ -307,6 +321,62 @@ public static class AgentBuilder
         });
 #pragma warning restore MAAI001
         providers.Add(todoProvider);
+
+        // Step 15: SubAgentsProvider — fifth AIContextProvider. Configures
+        // ONE read-only "researcher" sub-agent the main agent can delegate
+        // to. The framework auto-registers 6 tools (SubAgents_StartTask,
+        // _WaitForFirstCompletion, _GetTaskResults, _GetAllTasks,
+        // _ContinueTask, _ClearCompletedTask) — verified live with the
+        // "list every tool" probe.
+        //
+        // Required version pins: an earlier draft of this step had
+        // sub-agent execution failing with `MissingMethodException` on
+        // `WebSearchToolResultContent.get_Results()`. Two pins fixed it
+        // (see csproj for the explanation):
+        //   - Microsoft.Extensions.AI[.Abstractions] @ 10.5.1
+        //   - Anthropic SDK @ 12.20.1
+        // The wiring below is correct and now executes end-to-end.
+        //
+        // Researcher sub-agent: read-only navigation tools only
+        // (read_file, list_dir, glob, grep). No mutation, no bash, no
+        // providers attached. Same model as main; same AnthropicClient
+        // (one HTTP-client pool, one API-key allocation).
+        var researcherTools = new List<AITool>
+        {
+            AIFunctionFactory.Create(ReadFile.Read, name: "read_file"),
+            AIFunctionFactory.Create(ListDir.Run,   name: "list_dir"),
+            AIFunctionFactory.Create(Glob.Run,      name: "glob"),
+            AIFunctionFactory.Create(Grep.Run,      name: "grep"),
+        };
+        var researcherOptions = new ChatClientAgentOptions
+        {
+            Name = ResearcherAgentName,
+            ChatOptions = new ChatOptions
+            {
+                ModelId      = model,
+                Instructions =
+                    "You are a read-only researcher. Explore files via the tools and " +
+                    "report your findings concisely as plain text. You cannot modify " +
+                    "anything; only read, list, glob, grep.",
+                Tools        = researcherTools,
+            },
+        };
+        var researcher = client.AsAIAgent(researcherOptions);
+#pragma warning disable MAAI001
+        var subAgentsProvider = new SubAgentsProvider(
+            new[] { researcher },
+            new SubAgentsProviderOptions
+            {
+                Instructions =
+                    "You can delegate read-only exploration to a sub-agent named " +
+                    "'" + ResearcherAgentName + "'. Use SubAgents_StartTask when you " +
+                    "need someone to investigate files without you having to read them " +
+                    "yourself — keeps your own context cleaner. Wait for completion " +
+                    "with SubAgents_WaitForFirstCompletion and read results with " +
+                    "SubAgents_GetTaskResults.",
+            });
+#pragma warning restore MAAI001
+        providers.Add(subAgentsProvider);
 
         var options = new ChatClientAgentOptions
         {

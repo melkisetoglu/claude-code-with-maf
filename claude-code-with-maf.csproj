@@ -13,6 +13,30 @@
     <PackageReference Include="Microsoft.Extensions.FileSystemGlobbing" Version="10.0.7" />
     <PackageReference Include="OpenTelemetry" Version="1.15.3" />
     <PackageReference Include="OpenTelemetry.Exporter.Console" Version="1.15.3" />
+    <!--
+      Step 15 — version pins to make sub-agent execution work.
+
+      Symptom (without pins): SubAgentsProvider's execution path throws
+      `MissingMethodException` for `WebSearchToolResultContent.get_Results()`
+      because three transitive Microsoft.Extensions.AI.Abstractions
+      versions (9.5.0 / 10.4.0 / 10.5.1) resolve into the dep graph and
+      a stale Anthropic SDK (12.13.0) drives Microsoft.Agents.AI.Anthropic
+      down a code path that references types from an older shape.
+
+      Two pins fix it:
+        - Microsoft.Extensions.AI[.Abstractions] @ 10.5.1 unifies version
+          resolution across the graph.
+        - Anthropic @ 12.20.1 ("provider dependency") gets us off the
+          12.13.0 transitive default; the official MAF guidance is
+          "upgrade Anthropic SDK to 12.20.0+ to remove references to
+          stale APIs," and it removes the specific path that triggers
+          the WebSearchToolResultContent rename collision.
+
+      Re-evaluate when MAF previews stabilise.
+    -->
+    <PackageReference Include="Microsoft.Extensions.AI" Version="10.5.1" />
+    <PackageReference Include="Microsoft.Extensions.AI.Abstractions" Version="10.5.1" />
+    <PackageReference Include="Anthropic" Version="12.20.1" />
   </ItemGroup>
 
   <!-- The default SDK glob would otherwise compile tests/**/*.cs into this

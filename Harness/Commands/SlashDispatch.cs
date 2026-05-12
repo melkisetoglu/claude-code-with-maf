@@ -25,6 +25,7 @@
 //    - Step 11 adds /skills — lists .md files discovered under ./skills/.
 //    - Step 12 adds /memory — lists files written by FileMemoryProvider.
 //    - Step 13 adds /todos — lists items from TodoProvider's in-session state.
+//    - Step 15 adds /agents — lists configured sub-agents.
 // =============================================================================
 
 using System.Globalization;
@@ -126,6 +127,7 @@ public sealed class SlashRegistry
             new SkillsCommand(),
             new MemoryCommand(),
             new TodosCommand(),
+            new AgentsCommand(),
         };
         self = new SlashRegistry(commands);
         return self;
@@ -454,6 +456,34 @@ internal sealed class TodosCommand : ISlashCommand
             if (!string.IsNullOrWhiteSpace(t.Description) && t.Description != t.Title)
                 Console.WriteLine($"        {t.Description}");
         }
+        Console.WriteLine();
+        return SlashAction.Continue;
+    }
+}
+
+internal sealed class AgentsCommand : ISlashCommand
+{
+    public string Name => "/agents";
+    public string Description => "List configured sub-agents (Step 15)";
+
+    public SlashAction Run(SlashContext ctx)
+    {
+        // Static information: what we configured in AgentBuilder. We don't
+        // query the SubAgentsProvider directly — it doesn't expose a
+        // listing API, and the configuration is the source of truth anyway.
+        //
+        // If the model is mid-delegation, recent SubTaskInfo lives in the
+        // session bag under "SubAgentsProvider" (verified live), but
+        // surfacing that is a stretch — it would require deserialising
+        // the framework's internal task-state JSON.
+        Console.WriteLine();
+        Console.WriteLine("Configured sub-agents:");
+        Console.WriteLine($"  {AgentBuilder.ResearcherAgentName}");
+        Console.WriteLine("    role  : read-only researcher (no mutation, no shell)");
+        Console.WriteLine("    tools : read_file, list_dir, glob, grep");
+        Console.WriteLine("    model : same as main agent");
+        Console.WriteLine();
+        Console.WriteLine("The main agent delegates via SubAgents_StartTask(agentName, input).");
         Console.WriteLine();
         return SlashAction.Continue;
     }
