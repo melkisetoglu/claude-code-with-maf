@@ -25,8 +25,14 @@
 //          YAML-frontmatter skill files, surfaces them to the model. Opt-in:
 //          if ./skills/ doesn't exist we don't wire the provider at all,
 //          so existing sessions are unaffected.
+//  Step 12: + FileMemoryProvider — third AIContextProvider. Persistent
+//          scratchpad backed by FileSystemAgentFileStore rooted at ./memory/.
+//          Opt-in by directory existence. Same global-folder model as
+//          skills: every session sees the same WorkingFolder, so notes the
+//          model writes survive across sessions. Live probe confirmed the
+//          provider auto-registers file tools — no harness wiring needed.
 //  Future steps wire more in here without touching Program.cs:
-//    - Step 12+: FileMemoryProvider, TodoProvider, …
+//    - Step 13+: TodoProvider, …
 //
 //  Wrap order is inside-out: raw model → LoggingAgent → OpenTelemetryAgent →
 //  ToolApprovalAgent. The principle is "outer is closer to the user":
@@ -69,6 +75,11 @@ public static class AgentBuilder
     // is parsed as an AgentFileSkill (YAML frontmatter + body). If the dir
     // doesn't exist, the provider isn't wired — explicit opt-in.
     public const string SkillsDirectoryName = "skills";
+
+    // Step 12: where FileMemoryProvider keeps its scratchpad files. Same
+    // opt-in convention as skills/ — present-means-on. Gitignored: the
+    // model writes user-specific notes here.
+    public const string MemoryDirectoryName = "memory";
 
     public const string DefaultInstructions =
         "You are a helpful assistant. Keep replies concise. " +
@@ -182,6 +193,50 @@ public static class AgentBuilder
                 .Build();
 #pragma warning restore MAAI001
             providers.Add(skillsProvider);
+        }
+
+        // Step 12: FileMemoryProvider — persistent scratchpad for the model.
+        //
+        // Architecture (verified by reflection on the restored DLLs):
+        //   FileMemoryProvider(AgentFileStore, Func<AgentSession, FileMemoryState>, options)
+        //
+        //   - The store is the storage backend. FileSystemAgentFileStore(root)
+        //     scopes everything the agent reads/writes to that root path —
+        //     even if the model tries `..`, it can't escape because the
+        //     store treats its argument as relative to root.
+        //
+        //   - The stateAccessor maps a session to its FileMemoryState.
+        //     WorkingFolder is the subpath WITHIN the store the model sees
+        //     as its memory. We return the same value for every session
+        //     (empty string = use the entire store), giving us TRUE
+        //     cross-session memory: every session reads and writes the
+        //     same folder, so notes from yesterday show up today.
+        //
+        //   - The Instructions string is injected into the system prompt;
+        //     the framework appends information about the folder itself.
+        //
+        // Opt-in by directory existence, same as skills/ above. The folder
+        // is gitignored (.gitignore lists it) — contents are user-specific
+        // notes the model wrote, not workshop source.
+        var memoryDir = Path.Combine(Directory.GetCurrentDirectory(), MemoryDirectoryName);
+        if (Directory.Exists(memoryDir))
+        {
+#pragma warning disable MAAI001
+            var memoryStore = new FileSystemAgentFileStore(memoryDir);
+            var memoryProvider = new FileMemoryProvider(
+                memoryStore,
+                _ => new FileMemoryState { WorkingFolder = "" },
+                new FileMemoryProviderOptions
+                {
+                    Instructions =
+                        "You have a persistent memory folder available across all sessions of this agent. " +
+                        "Use the file tools the memory provider gives you to save facts, decisions, and " +
+                        "conventions you should remember the next time you run. Memory writes are silent " +
+                        "(no approval gate) — use them freely for notes; use write_file (approval-gated) " +
+                        "for changes to the user's actual project files.",
+                });
+#pragma warning restore MAAI001
+            providers.Add(memoryProvider);
         }
 
         var options = new ChatClientAgentOptions

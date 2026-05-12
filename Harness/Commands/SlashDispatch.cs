@@ -23,7 +23,7 @@
 //    - Step 8 (plan mode) adds /plan and /accept-plan.
 //    - Step 9 (streaming polish) adds /interrupt or repurposes Ctrl+C.
 //    - Step 11 adds /skills — lists .md files discovered under ./skills/.
-//    - Step 12 (memory) wires /yolo and AlwaysApprove to disk.
+//    - Step 12 adds /memory — lists files written by FileMemoryProvider.
 // =============================================================================
 
 using System.Globalization;
@@ -115,6 +115,7 @@ public sealed class SlashRegistry
             new YoloCommand(),
             new PlanCommand(),
             new SkillsCommand(),
+            new MemoryCommand(),
         };
         self = new SlashRegistry(commands);
         return self;
@@ -340,6 +341,52 @@ internal sealed class SkillsCommand : ISlashCommand
             // Invariant culture — default formatting would use locale-specific
             // thousand separators ("1.386" on a de-DE machine), which is
             // confusing when "1.386 bytes" looks like 1.386 of a byte.
+            Console.WriteLine($"  {name}  ({size.ToString("N0", CultureInfo.InvariantCulture)} bytes)");
+        }
+        Console.WriteLine();
+        return SlashAction.Continue;
+    }
+}
+
+internal sealed class MemoryCommand : ISlashCommand
+{
+    public string Name => "/memory";
+    public string Description => "List files written by FileMemoryProvider under ./memory/";
+
+    public SlashAction Run(SlashContext ctx)
+    {
+        // Same opt-in-by-existence convention as /skills. If ./memory/ is
+        // absent the provider isn't wired and the command says so. If
+        // present, list everything — the model writes both the actual
+        // memo files AND a few framework-maintained sidecars
+        // (memories.md is the index, *_description.md mirrors a tool
+        // call's `description` parameter). We don't filter: showing all
+        // files is more honest than pretending the framework's bookkeeping
+        // doesn't exist.
+        var dir = Path.Combine(Directory.GetCurrentDirectory(), AgentBuilder.MemoryDirectoryName);
+        Console.WriteLine();
+        if (!Directory.Exists(dir))
+        {
+            Console.WriteLine($"(no ./{AgentBuilder.MemoryDirectoryName}/ folder — FileMemoryProvider not wired.)");
+            Console.WriteLine($"create ./{AgentBuilder.MemoryDirectoryName}/ to opt in to cross-session memory.\n");
+            return SlashAction.Continue;
+        }
+
+        var files = Directory.EnumerateFiles(dir, "*", SearchOption.TopDirectoryOnly)
+            .OrderBy(p => p, StringComparer.Ordinal)
+            .ToList();
+
+        if (files.Count == 0)
+        {
+            Console.WriteLine($"(./{AgentBuilder.MemoryDirectoryName}/ is empty — the model hasn't written anything yet.)\n");
+            return SlashAction.Continue;
+        }
+
+        Console.WriteLine($"Memory files under ./{AgentBuilder.MemoryDirectoryName}/:");
+        foreach (var f in files)
+        {
+            var name = Path.GetFileName(f);
+            var size = new FileInfo(f).Length;
             Console.WriteLine($"  {name}  ({size.ToString("N0", CultureInfo.InvariantCulture)} bytes)");
         }
         Console.WriteLine();

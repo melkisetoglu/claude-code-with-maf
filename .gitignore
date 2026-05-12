@@ -13,6 +13,11 @@ obj/
 # User data — sessions contain conversation history with Claude. Never commit.
 sessions/
 
+# User data — the model writes cross-session notes here via
+# FileMemoryProvider (Step 12). Personal, possibly sensitive. Opt-in by
+# creating the directory — ignored once it exists.
+memory/
+
 # Log files written by Observability/FileLogger.cs (Step 5).
 *.log
 

@@ -114,6 +114,7 @@ public sealed class SlashRegistryTests : IDisposable
         Assert.Contains("/yolo", output);
         Assert.Contains("/plan", output);
         Assert.Contains("/skills", output);
+        Assert.Contains("/memory", output);
     }
 
     [Fact]
