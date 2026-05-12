@@ -37,24 +37,46 @@
 //          shape changes from AIAgent to a small record so the harness
 //          can call provider.GetAllTodosAsync(session) for /todos —
 //          first provider whose read-side API matters to the harness.
+//  Step 14: switch the wrap chain from imperative constructor calls to
+//          the framework's AIAgentBuilder + .UseX() extension methods.
+//          Same final behaviour, fluent shape:
+//             new AIAgentBuilder(inner)
+//                 .UseLogging(loggerFactory, _ => { })
+//                 .UseOpenTelemetry(OtelSourceName, _ => { })   // when --otel
+//                 .UseToolApproval(JsonSerializerOptions.Default)
+//                 .Use(ToolTimingMiddleware())                  // NEW
+//                 .Build(serviceProvider);
+//          Adds tool-call timing via FunctionInvocationDelegatingAgentBuilderExtensions.Use
+//          — the function-invocation middleware shape MAF was designed
+//          for. Prints "  → 32ms" after each tool call so the user sees
+//          per-call latency inline. The retroactive lesson: we hand-rolled
+//          the wrap chain in Steps 3 and 5 because the builder pattern
+//          looked over-engineered. Now that we have a NEW middleware to
+//          add, the builder pays its keep: one fluent chain reads better
+//          than four imperative wraps + a conditional, and any future
+//          middleware drops into one line.
 //  Future steps wire more in here without touching Program.cs:
-//    - Step 14+: hooks/middleware, SubAgentsProvider, MCP, budgets …
+//    - Step 15+: SubAgentsProvider, MCP, budgets …
 //
-//  Wrap order is inside-out: raw model → LoggingAgent → OpenTelemetryAgent →
-//  ToolApprovalAgent. The principle is "outer is closer to the user":
-//    - LoggingAgent logs raw model behaviour AS IT HAPPENS — including the
-//      approval-response messages the gate forwards back, so the trace is
-//      complete.
-//    - OpenTelemetryAgent traces the same boundary. (Step 14 may move it.)
+//  Wrap order (now explicit in the .Use chain instead of buried in
+//  reassignment lines): raw → Logging → OpenTelemetry → ToolApproval →
+//  Tool-timing. Outermost is closest to the user:
+//    - LoggingAgent logs raw model behaviour AS IT HAPPENS.
+//    - OpenTelemetryAgent traces the same boundary.
 //    - ToolApprovalAgent intercepts at the user-visible boundary so the
 //      gate is the last thing between the model and the world.
+//    - Tool-timing middleware sits at the function-invocation seam —
+//      below the gate (timing approved calls only is the right semantic;
+//      gating denials shouldn't show fake "0ms" success).
 // =============================================================================
 
+using System.Diagnostics;
 using System.Text.Json;
 using Anthropic;
 using Microsoft.Agents.AI;
 using Microsoft.Agents.AI.Compaction;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using ClaudeChat.Config;
 using ClaudeChat.Tools;
@@ -300,28 +322,77 @@ public static class AgentBuilder
 
         AIAgent inner = client.AsAIAgent(options);
 
-        // Step 5: log every Run* call at the model boundary.
-        inner = new LoggingAgent(inner, loggerFactory.CreateLogger("ClaudeChat.Agent"));
+        // Step 14: fluent middleware pipeline via AIAgentBuilder.
+        //
+        // Each .UseX(...) call wraps the inner agent with a delegating
+        // agent. Build(serviceProvider) walks the chain inside-out and
+        // returns the outermost wrapped agent.
+        //
+        // The empty ServiceProvider is for the builder's DI hook — none
+        // of the .UseX wrappers here need services, but the API requires
+        // one. A future step that wants DI (HTTP client, secret store,
+        // etc.) can grow this into a real ServiceCollection.
+        //
+        // ToolApprovalAgent + the experimental MAAI001 types still live
+        // in this build path — the .Use extension methods route into them
+        // internally, so the suppression follows them.
+        var serviceProvider = new ServiceCollection().BuildServiceProvider();
 
-        // Step 5 (opt-in): tracing. Spans emit to whatever TracerProvider
-        // the caller wired up — for the workshop, that's the console
-        // exporter set up in Program.cs when --otel is passed.
+        var builder = new AIAgentBuilder(inner)
+            .UseLogging(loggerFactory, _ => { });
+
         if (enableOtel)
         {
-            inner = new OpenTelemetryAgent(inner, OtelSourceName);
+            builder = builder.UseOpenTelemetry(OtelSourceName, _ => { });
         }
 
-        // Wrap once with the approval gate. Anything marked
-        // ApprovalRequiredAIFunction will route through here.
-        //
-        // ToolApprovalAgent is marked [Experimental] (MAAI001) — the API may
-        // change in future MAF previews. We suppress the diagnostic here
-        // rather than project-wide because it should stay visible: when MAF
-        // moves the type, we want the warning back to flag the migration.
 #pragma warning disable MAAI001
-        var wrapped = new ToolApprovalAgent(inner, JsonSerializerOptions.Default);
+        builder = builder
+            .UseToolApproval(JsonSerializerOptions.Default)
+            .Use(ToolTimingMiddleware);
 #pragma warning restore MAAI001
+
+        var wrapped = builder.Build(serviceProvider);
         return new BuildResult(wrapped, todoProvider);
+    }
+
+    /// <summary>
+    /// Step 14 — tool-call timing middleware. Runs at the function-invocation
+    /// seam (every tool call routes through here, including the framework's
+    /// auto-registered load_skill, FileMemory_*, TodoList_*). Prints
+    /// "  → 32ms" on its own line after each call so the user sees per-tool
+    /// latency inline with the existing [tool: …] stream output.
+    ///
+    /// Why on its own line: the [tool: …] bracket announcement is printed
+    /// by the stream renderer at the moment the model emits the call. The
+    /// actual function-invocation runs after the stream chunk is flushed —
+    /// we can't append to a flushed console line cleanly, so we print on
+    /// the next line, indented to suggest "this is the result of the call
+    /// above."
+    ///
+    /// On error: we still print elapsed time, plus a marker so the user
+    /// can see WHICH tool failed and how long it spent failing.
+    /// </summary>
+    private static async ValueTask<object?> ToolTimingMiddleware(
+        AIAgent agent,
+        FunctionInvocationContext fnCtx,
+        Func<FunctionInvocationContext, CancellationToken, ValueTask<object?>> next,
+        CancellationToken ct)
+    {
+        var sw = Stopwatch.StartNew();
+        try
+        {
+            var result = await next(fnCtx, ct);
+            sw.Stop();
+            Console.WriteLine($"  → {sw.ElapsedMilliseconds}ms");
+            return result;
+        }
+        catch
+        {
+            sw.Stop();
+            Console.WriteLine($"  → {sw.ElapsedMilliseconds}ms (failed)");
+            throw;
+        }
     }
 
     /// <summary>

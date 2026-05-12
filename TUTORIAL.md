@@ -81,7 +81,7 @@ The single project at the repo root grows with each step. Run [`dotnet run`](REA
 ### Milestone 6 — Power features
 | # | Step | Status |
 |---|---|---|
-| 14 | Hooks / middleware (delegating agent pattern) | _planned_ |
+| 14 | [Hooks / middleware via the `AIAgentBuilder` pipeline](tutorial/14-middleware.md) | ✅ done |
 | 15 | Sub-agents (`SubAgentsProvider`) | _planned_ |
 | 16 | MCP server integration | _planned_ |
 | 17 | Budgets & circuit breakers | _planned_ |
