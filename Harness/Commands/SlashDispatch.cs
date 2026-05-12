@@ -22,9 +22,11 @@
 //  Future:
 //    - Step 8 (plan mode) adds /plan and /accept-plan.
 //    - Step 9 (streaming polish) adds /interrupt or repurposes Ctrl+C.
+//    - Step 11 adds /skills — lists .md files discovered under ./skills/.
 //    - Step 12 (memory) wires /yolo and AlwaysApprove to disk.
 // =============================================================================
 
+using System.Globalization;
 using Microsoft.Agents.AI;
 using ClaudeChat.Agent;
 using ClaudeChat.Config;
@@ -112,6 +114,7 @@ public sealed class SlashRegistry
             new SessionsCommand(),
             new YoloCommand(),
             new PlanCommand(),
+            new SkillsCommand(),
         };
         self = new SlashRegistry(commands);
         return self;
@@ -284,6 +287,62 @@ internal sealed class PlanCommand : ISlashCommand
               "will be auto-denied. Use the read tools to explore, propose a plan, " +
               "then /plan again to exit and execute.)\n"
             : "(plan: OFF — mutation tools are gated normally again.)\n");
+        return SlashAction.Continue;
+    }
+}
+
+internal sealed class SkillsCommand : ISlashCommand
+{
+    public string Name => "/skills";
+    public string Description => "List skills under ./skills/ (workshop convention)";
+
+    public SlashAction Run(SlashContext ctx)
+    {
+        // We rescan the directory at command time rather than caching at agent
+        // build. Two reasons:
+        //   (1) the user might add or edit a skill mid-session and rerun this
+        //       to confirm it's there;
+        //   (2) the framework's AgentSkillsProvider is the source of truth
+        //       for what the model actually sees — this command is a
+        //       diagnostic over the same disk state, not a mirror of the
+        //       provider's internal cache.
+        //
+        // Layout convention (this is what AgentFileSkillsSource expects):
+        //     ./skills/<skill-name>/SKILL.md
+        // A flat ./skills/foo.md is silently skipped by the framework. We
+        // mirror that here so the diagnostic matches what the model sees.
+        var dir = Path.Combine(Directory.GetCurrentDirectory(), AgentBuilder.SkillsDirectoryName);
+        Console.WriteLine();
+        if (!Directory.Exists(dir))
+        {
+            Console.WriteLine($"(no ./{AgentBuilder.SkillsDirectoryName}/ folder — skills provider not wired.)");
+            Console.WriteLine($"create ./{AgentBuilder.SkillsDirectoryName}/<name>/SKILL.md to opt in.\n");
+            return SlashAction.Continue;
+        }
+
+        var skills = Directory.EnumerateDirectories(dir)
+            .Select(d => new { Folder = d, Skill = Path.Combine(d, "SKILL.md") })
+            .Where(x => File.Exists(x.Skill))
+            .OrderBy(x => x.Folder, StringComparer.Ordinal)
+            .ToList();
+
+        if (skills.Count == 0)
+        {
+            Console.WriteLine($"(./{AgentBuilder.SkillsDirectoryName}/ exists but contains no <name>/SKILL.md skills.)\n");
+            return SlashAction.Continue;
+        }
+
+        Console.WriteLine($"Skills loaded from ./{AgentBuilder.SkillsDirectoryName}/:");
+        foreach (var s in skills)
+        {
+            var name = Path.GetFileName(s.Folder);
+            var size = new FileInfo(s.Skill).Length;
+            // Invariant culture — default formatting would use locale-specific
+            // thousand separators ("1.386" on a de-DE machine), which is
+            // confusing when "1.386 bytes" looks like 1.386 of a byte.
+            Console.WriteLine($"  {name}  ({size.ToString("N0", CultureInfo.InvariantCulture)} bytes)");
+        }
+        Console.WriteLine();
         return SlashAction.Continue;
     }
 }

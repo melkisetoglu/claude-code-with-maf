@@ -20,8 +20,13 @@
 //          shortcut to AsAIAgent(ChatClientAgentOptions) so we can pass an
 //          AIContextProviders list. Model/instructions/tools migrated to
 //          options.ChatOptions (ModelId / Instructions / Tools).
+//  Step 11: + AgentSkillsProvider — the workshop's second AIContextProvider,
+//          configured (not written). Builder-driven. Scans ./skills/*.md for
+//          YAML-frontmatter skill files, surfaces them to the model. Opt-in:
+//          if ./skills/ doesn't exist we don't wire the provider at all,
+//          so existing sessions are unaffected.
 //  Future steps wire more in here without touching Program.cs:
-//    - Step 11+: AgentSkillsProvider, FileMemoryProvider, TodoProvider, …
+//    - Step 12+: FileMemoryProvider, TodoProvider, …
 //
 //  Wrap order is inside-out: raw model → LoggingAgent → OpenTelemetryAgent →
 //  ToolApprovalAgent. The principle is "outer is closer to the user":
@@ -58,6 +63,12 @@ public static class AgentBuilder
     public const int CompactionContextWindowTokens = 200_000;
     public const int CompactionMaxOutputTokens     = 8_000;
     public const string CompactionStateKey         = "ClaudeChat.Compaction";
+
+    // Step 11: where AgentSkillsProvider looks for skill files. Relative to
+    // cwd, matching how agent.json is discovered. Each *.md under this dir
+    // is parsed as an AgentFileSkill (YAML frontmatter + body). If the dir
+    // doesn't exist, the provider isn't wired — explicit opt-in.
+    public const string SkillsDirectoryName = "skills";
 
     public const string DefaultInstructions =
         "You are a helpful assistant. Keep replies concise. " +
@@ -139,6 +150,40 @@ public static class AgentBuilder
             loggerFactory: loggerFactory);
 #pragma warning restore MAAI001
 
+        // Step 11: AgentSkillsProvider — built via AgentSkillsProviderBuilder
+        // (the fluent path the framework expects you to use). UseFileSkill
+        // takes a directory root, an AgentFileSkillsSourceOptions (passing an
+        // empty options object accepts the defaults — pure markdown skills,
+        // no extra resource or script directories), and an
+        // AgentFileSkillScriptRunner.
+        //
+        // Why a non-null runner: passing null tripped Build() at the
+        // builder's UseFileSkills lambda — the runner slot is required even
+        // when no skill declares scripts. We supply a deny runner that
+        // throws if invoked. Wiring real script execution (and routing it
+        // through the approval gate) is a Step 11 stretch.
+        //
+        // Opt-in: only attach if ./skills/ exists. Avoids surprising older
+        // sessions and keeps the "do nothing if you haven't asked for it"
+        // default. The /skills slash command observes the same convention.
+        var providers = new List<AIContextProvider> { compactionProvider };
+        var skillsDir = Path.Combine(Directory.GetCurrentDirectory(), SkillsDirectoryName);
+        if (Directory.Exists(skillsDir))
+        {
+#pragma warning disable MAAI001
+            AgentFileSkillScriptRunner denyScriptRunner =
+                (skill, script, _, _, _) => throw new InvalidOperationException(
+                    $"skill script execution is not enabled in Step 11 " +
+                    $"(skill={skill.Frontmatter.Name}, script={script.Name}). " +
+                    $"see tutorial/11-skills.md stretch for how to wire a real runner.");
+            var skillsProvider = new AgentSkillsProviderBuilder()
+                .UseFileSkill(skillsDir, new AgentFileSkillsSourceOptions(), denyScriptRunner)
+                .UseLoggerFactory(loggerFactory)
+                .Build();
+#pragma warning restore MAAI001
+            providers.Add(skillsProvider);
+        }
+
         var options = new ChatClientAgentOptions
         {
             Name = "ClaudeChat",
@@ -148,7 +193,7 @@ public static class AgentBuilder
                 Instructions = instructions,
                 Tools        = tools,
             },
-            AIContextProviders = new AIContextProvider[] { compactionProvider },
+            AIContextProviders = providers,
         };
 
         AIAgent inner = client.AsAIAgent(options);

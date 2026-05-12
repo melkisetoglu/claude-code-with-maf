@@ -4,7 +4,7 @@ A workshop that grows a Claude Code-style console agent on top of **Microsoft Ag
 
 > **Following the workshop?** Read **[TUTORIAL.md](TUTORIAL.md)** for the step-by-step guide. This README is just "how to run it".
 
-Current state: streaming REPL with read-only navigation (`read_file`, `list_dir`, `glob`, `grep`) and approval-gated mutation tools (`write_file`, `edit_file`, `bash`), per-turn token/cost reporting, JSON-Lines file logging, optional OpenTelemetry tracing, external `agent.json` profiles (model/prompt/tools/approval rules), slash-command dispatcher (`/help`, `/tools`, `/cost`, `/model`, `/sessions`, `/yolo`, `/clear`, `/id`, `/exit`) with `/yolo` bypass and "always approve this tool" memory, plan mode (`/plan` toggles read-only; mutations auto-deny), streaming polish (Ctrl+C interrupts the in-flight turn, Braille spinner while waiting for first content, dim-cyan colour around ``` code blocks), **automatic context compaction** (`CompactionProvider` keeps long sessions inside the model's input budget — drops tool results at 50%, truncates at 80%), named sessions you can list and resume — Claude Code-style.
+Current state: streaming REPL with read-only navigation (`read_file`, `list_dir`, `glob`, `grep`) and approval-gated mutation tools (`write_file`, `edit_file`, `bash`), per-turn token/cost reporting, JSON-Lines file logging, optional OpenTelemetry tracing, external `agent.json` profiles (model/prompt/tools/approval rules), slash-command dispatcher (`/help`, `/tools`, `/cost`, `/model`, `/sessions`, `/yolo`, `/skills`, `/clear`, `/id`, `/exit`) with `/yolo` bypass and "always approve this tool" memory, plan mode (`/plan` toggles read-only; mutations auto-deny), streaming polish (Ctrl+C interrupts the in-flight turn, Braille spinner while waiting for first content, dim-cyan colour around ``` code blocks), automatic context compaction (`CompactionProvider` keeps long sessions inside the model's input budget — drops tool results at 50%, truncates at 80%), **project-context auto-load** (`AgentSkillsProvider` discovers `./skills/<name>/SKILL.md` files at startup, injects each skill's name+description into the system prompt, and auto-registers a `load_skill` tool so the model can fetch bodies on demand — Claude Code Skills convention, body-on-demand out of the box), named sessions you can list and resume — Claude Code-style.
 
 ## Prerequisites
 
@@ -36,6 +36,7 @@ Commands inside the chat (all slash-prefixed):
 - `/sessions` — list past sessions
 - `/yolo` — toggle auto-approve-everything mode (off by default)
 - `/plan` — toggle plan mode (read-only; mutation tools auto-deny)
+- `/skills` — list skills under `./skills/` (workshop convention: `./skills/<name>/SKILL.md`)
 
 At the approval prompt, answers are `y`/`yes` to approve once, `a`/`always` to approve and remember this tool for the rest of the session, anything else to deny.
 
@@ -134,6 +135,7 @@ AgentSession session = await agent.DeserializeSessionAsync(sessionElem);
 - [Tools/WriteFile.cs](Tools/WriteFile.cs), [Tools/EditFile.cs](Tools/EditFile.cs), [Tools/Bash.cs](Tools/Bash.cs) — approval-gated mutation tools (Step 4)
 - [Observability/FileLogger.cs](Observability/FileLogger.cs), [Observability/Pricing.cs](Observability/Pricing.cs), [Observability/TurnUsage.cs](Observability/TurnUsage.cs) — logging + token/cost (Step 5)
 - [Config/AgentConfig.cs](Config/AgentConfig.cs) — `agent.json` schema + loader (Step 6)
+- [skills/repo-context/SKILL.md](skills/repo-context/SKILL.md) — sample agent skill, auto-discovered by `AgentSkillsProvider` (Step 11)
 
 ## Notes
 

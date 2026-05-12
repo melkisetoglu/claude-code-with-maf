@@ -1,5 +1,12 @@
 // =============================================================================
 //  AgentConfigTests — JSON load round-trip, optional fields, error cases.
+//
+//  TryLoadFromCwd_* tests swap Environment.CurrentDirectory, which is
+//  process-global. SkillsCommandTests (Step 11) also swaps cwd. xUnit runs
+//  test classes in parallel by default — without a shared collection these
+//  two classes race and one silently trashes the other. Sharing
+//  "Console-shared-static" here puts AgentConfigTests in the same serial
+//  bucket as everything else that touches process globals (Console + cwd).
 // =============================================================================
 
 using ClaudeChat.Config;
@@ -7,6 +14,7 @@ using ClaudeChat.Config;
 namespace ClaudeChat.Tests;
 
 [Trait("Category", "Unit")]
+[Collection("Console-shared-static")]
 public sealed class AgentConfigTests : IDisposable
 {
     private readonly string _tmp;

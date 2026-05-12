@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A **workshop-style tutorial** that grows a Claude Code-style console agent on top of **Microsoft Agent Framework (MAF)** in .NET 9, talking to Claude via the official Anthropic SDK adapter. The single project at the repo root grows step-by-step across 17 chapters in 6 milestones (see [TUTORIAL.md](TUTORIAL.md)).
 
-Current state: **Step 10 — context compaction**. `AgentBuilder` switched from the `AsAIAgent(model, instructions, name, tools)` shortcut to the `AsAIAgent(ChatClientAgentOptions)` overload so it can attach `AIContextProviders`. First provider is `CompactionProvider(ContextWindowCompactionStrategy(200000, 8000), stateKey: "ClaudeChat.Compaction", loggerFactory)` — zero-LLM, drops tool results at 50% of input budget, truncates at 80%. Strategy state persists in `AgentSessionStateBag` (`stateBag` of saved session JSON) so resume picks up the compacted form. Window sizes hardcoded for Claude 4 family; stretch is to make them config-driven. This step also introduces the **third MAF extension shape**: providers (`AIContextProvider`) alongside tools and delegating agents.
+Current state: **Step 11 — project-context auto-load via `AgentSkillsProvider`**. Second `AIContextProvider` attached to `options.AIContextProviders`, alongside Step 10's `CompactionProvider`. Built via `new AgentSkillsProviderBuilder().UseFileSkill(skillsDir, new AgentFileSkillsSourceOptions(), denyScriptRunner).UseLoggerFactory(loggerFactory).Build()`. Opt-in by directory existence: if `./skills/` doesn't exist, the provider isn't attached. Convention: **`./skills/<name>/SKILL.md`** (Claude Code Skills folder layout — flat `.md` files at the root are silently skipped by the framework's discovery). The provider surfaces each skill's **name + description** (frontmatter) into the system prompt via `SkillsInstructionPrompt`, AND **auto-registers a `load_skill(skillName)` tool** the model calls to fetch bodies on demand — body-on-demand is fully automatic, no custom tool wiring needed (I almost wrote one before realising; chapter pitfalls document the lesson). The script-runner slot is required at `Build()` even when no skill defines scripts — we supply a deny-runner that throws on invocation. New slash command `/skills` mirrors the on-disk state. Sample skill at `skills/repo-context/SKILL.md` captures the workshop conventions. `AgentConfigTests` joined `[Collection("Console-shared-static")]` so its cwd swap can't race `SkillsCommandTests`.
 
 This means: when adding code, the unit of work is "the next step." Each step is one sitting, ends in a clean state, gets a git tag (`step-00`, `step-01`, …) and a `[step-NN]` commit prefix so `git log --oneline` reads like a table of contents. Don't sneak future-step features into the current step.
 
@@ -88,6 +88,8 @@ claude-code-with-maf/
 ├── Persistence/                   # session storage + metadata wrapper
 ├── Observability/                 # logging, tracing, pricing, token accumulator (step 5)
 ├── Config/                        # agent.json loader (step 6)
+├── skills/                        # AgentSkillsProvider source dir (step 11)
+│   └── <name>/SKILL.md            #   one folder per skill, YAML frontmatter + body
 ├── tutorial/                      # one .md per step, filename matches step number
 ├── sessions/                      # gitignored runtime data (note: lowercase!)
 ├── claudechat.log                 # gitignored runtime log (step 5)
