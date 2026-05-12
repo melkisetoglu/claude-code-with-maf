@@ -94,54 +94,134 @@ public static class ChatLoop
             Console.Write("claude > ");
             ChatMessage nextMessage = new(ChatRole.User, effectiveInput);
             var turnUsage = new UsageAccumulator();
-            while (true)
-            {
-                var pendingApprovals = new List<ToolApprovalRequestContent>();
-                bool endsOnNewline = true;
+            var renderer = new MarkdownStreamRenderer();
 
-                await foreach (var update in agent.RunStreamingAsync(nextMessage, ctx.Session))
+            // Step 9: per-turn CancellationTokenSource hooked to Ctrl+C.
+            // We cancel the streaming, swallow the OperationCanceledException,
+            // and return to the prompt. Process stays alive (e.Cancel = true).
+            using var turnCts = new CancellationTokenSource();
+            void OnCancel(object? sender, ConsoleCancelEventArgs e)
+            {
+                e.Cancel = true;
+                turnCts.Cancel();
+            }
+            Console.CancelKeyPress += OnCancel;
+
+            bool interrupted = false;
+            try
+            {
+                while (true)
                 {
-                    foreach (var content in update.Contents)
+                    var pendingApprovals = new List<ToolApprovalRequestContent>();
+                    bool endsOnNewline = true;
+
+                    // Step 9: spinner runs from before-first-content until
+                    // the moment any content arrives. Fresh per inner-while
+                    // iteration so each approval round-trip gets its own.
+                    var spinner = new Spinner();
+                    bool spinnerStopped = false;
+
+                    async ValueTask StopSpinnerOnce()
                     {
-                        switch (content)
+                        if (spinnerStopped) return;
+                        spinnerStopped = true;
+                        await spinner.StopAsync();
+                    }
+
+                    try
+                    {
+                        await foreach (var update in agent.RunStreamingAsync(nextMessage, ctx.Session)
+                            .WithCancellation(turnCts.Token))
                         {
-                            case TextContent text when text.Text.Length > 0:
-                                Console.Write(text.Text);
-                                endsOnNewline = text.Text[^1] == '\n';
-                                break;
-                            case FunctionCallContent call:
-                                Console.WriteLine($"\n[{FormatCall(call)}]");
+                            foreach (var content in update.Contents)
+                            {
+                                switch (content)
+                                {
+                                    case TextContent text when text.Text.Length > 0:
+                                        await StopSpinnerOnce();
+                                        renderer.Write(text.Text);
+                                        endsOnNewline = text.Text[^1] == '\n';
+                                        break;
+                                    case FunctionCallContent call:
+                                        await StopSpinnerOnce();
+                                        Console.WriteLine($"\n[{FormatCall(call)}]");
+                                        endsOnNewline = true;
+                                        break;
+                                    case ToolApprovalRequestContent req:
+                                        await StopSpinnerOnce();
+                                        pendingApprovals.Add(req);
+                                        break;
+                                    case UsageContent uc:
+                                        turnUsage.Add(uc.Details);
+                                        sessionUsage.Add(uc.Details);
+                                        break;
+                                }
+                            }
+
+                            if (update.FinishReason is not null && !endsOnNewline)
+                            {
+                                Console.WriteLine();
                                 endsOnNewline = true;
-                                break;
-                            case ToolApprovalRequestContent req:
-                                pendingApprovals.Add(req);
-                                break;
-                            case UsageContent uc:
-                                turnUsage.Add(uc.Details);
-                                sessionUsage.Add(uc.Details);
-                                break;
+                            }
                         }
                     }
-
-                    if (update.FinishReason is not null && !endsOnNewline)
+                    finally
                     {
-                        Console.WriteLine();
-                        endsOnNewline = true;
+                        await StopSpinnerOnce();
+                        renderer.Reset();
                     }
-                }
 
-                if (pendingApprovals.Count == 0) break;
+                    if (pendingApprovals.Count == 0) break;
 
-                var responses = new List<AIContent>();
-                foreach (var req in pendingApprovals)
-                {
-                    var approved = ApprovalPrompt.Ask(req, approval);
-                    responses.Add(req.CreateResponse(approved, approved ? "user approved" : "user denied"));
+                    var responses = new List<AIContent>();
+                    foreach (var req in pendingApprovals)
+                    {
+                        var approved = ApprovalPrompt.Ask(req, approval);
+                        responses.Add(req.CreateResponse(approved, approved ? "user approved" : "user denied"));
+                    }
+                    nextMessage = new ChatMessage(ChatRole.User, responses);
                 }
-                nextMessage = new ChatMessage(ChatRole.User, responses);
             }
-            Console.WriteLine(turnUsage.FormatSummary(model));
+            catch (OperationCanceledException)
+            {
+                interrupted = true;
+                Console.WriteLine("\n(interrupted)");
+            }
+            finally
+            {
+                Console.CancelKeyPress -= OnCancel;
+            }
+
+            // Honest accounting on Ctrl+C:
+            //   UsageContent arrives in the FINAL update of each
+            //   RunStreamingAsync call. Interrupting mid-stream means we
+            //   never receive it for the in-flight sub-call — but the
+            //   server still charges for tokens it generated before we
+            //   stopped reading, and the full input prompt was always
+            //   billed. So the displayed numbers are at best a partial
+            //   count (from completed sub-calls only) and the real bill
+            //   is at least that high, usually higher.
+            if (interrupted)
+            {
+                if (turnUsage.TotalTokens > 0)
+                {
+                    Console.WriteLine(turnUsage.FormatSummary(model, label: "turn (partial)"));
+                    Console.WriteLine("(tokens beyond this partial count were still billed by the server)");
+                }
+                else
+                {
+                    Console.WriteLine("(turn: usage unavailable — interrupt happened before any UsageContent arrived; tokens were still billed by the server for the input prompt and any output generated)");
+                }
+            }
+            else
+            {
+                Console.WriteLine(turnUsage.FormatSummary(model));
+            }
             Console.WriteLine();
+
+            // Save even when interrupted: MAF retains whatever state was
+            // captured before cancellation in `ctx.Session`, so resuming
+            // later picks up at the last completed boundary.
 
             ctx.Preview ??= input.Length > 60 ? input[..60] + "..." : input;
             await SessionStore.SaveAsync(ctx.SessionId, ctx.CreatedAt, model, ctx.Preview, ctx.Session, agent);
