@@ -32,6 +32,7 @@ namespace ClaudeChat.Harness;
 
 public static class ChatLoop
 {
+#pragma warning disable MAAI001    // TodoProvider in the signature.
     public static async Task RunAsync(
         AIAgent agent,
         string model,
@@ -39,7 +40,9 @@ public static class ChatLoop
         AgentSession session,
         DateTime createdAt,
         string? preview,
-        AgentConfig? agentConfig)
+        AgentConfig? agentConfig,
+        Microsoft.Agents.AI.TodoProvider todos)
+#pragma warning restore MAAI001
     {
         // Step 7: registry + state objects that the slash commands and the
         // approval prompt share.
@@ -57,6 +60,7 @@ public static class ChatLoop
             Config       = agentConfig,
             SessionUsage = sessionUsage,
             Approval     = approval,
+            Todos        = todos,
         };
 
         Console.WriteLine($"Model: {model}. Type /help for commands.\n");

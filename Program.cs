@@ -155,10 +155,10 @@ if (enableOtel)
         .Build();
 }
 
-AIAgent agent;
+AgentBuilder.BuildResult built;
 try
 {
-    agent = AgentBuilder.Build(
+    built = AgentBuilder.Build(
         apiKey,
         agentConfig,
         loggerFactory,
@@ -170,6 +170,9 @@ catch (InvalidOperationException ex)   // unknown tool / invalid requireApproval
     Console.Error.WriteLine($"agent.json config error: {ex.Message}");
     return 1;
 }
+// Pull out the pieces. Most of the code below still wants the bare AIAgent;
+// only the chat loop needs the TodoProvider reference (for /todos).
+AIAgent agent = built.Agent;
 
 // -----------------------------------------------------------------------------
 //  Resolve which session to use
@@ -226,7 +229,7 @@ else
     Console.WriteLine($"Started new session: {sessionId}");
 }
 
-await ChatLoop.RunAsync(agent, model, sessionId, session, createdAt, preview, agentConfig);
+await ChatLoop.RunAsync(agent, model, sessionId, session, createdAt, preview, agentConfig, built.Todos);
 tracerProvider?.Dispose();
 return 0;
 

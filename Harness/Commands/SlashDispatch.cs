@@ -24,6 +24,7 @@
 //    - Step 9 (streaming polish) adds /interrupt or repurposes Ctrl+C.
 //    - Step 11 adds /skills — lists .md files discovered under ./skills/.
 //    - Step 12 adds /memory — lists files written by FileMemoryProvider.
+//    - Step 13 adds /todos — lists items from TodoProvider's in-session state.
 // =============================================================================
 
 using System.Globalization;
@@ -58,6 +59,14 @@ public sealed class SlashContext
     public AgentConfig? Config { get; init; }
     public UsageAccumulator SessionUsage { get; init; } = null!;
     public ApprovalState Approval { get; init; } = null!;
+
+    // Step 13: read-side handle on the TodoProvider for /todos. First
+    // provider whose harness UX needs to call into the provider API itself
+    // — /skills and /memory mirror disk state, but todos live in the
+    // session bag, so we need the provider to read them.
+#pragma warning disable MAAI001
+    public TodoProvider Todos { get; init; } = null!;
+#pragma warning restore MAAI001
 }
 
 public sealed class SlashRegistry
@@ -116,6 +125,7 @@ public sealed class SlashRegistry
             new PlanCommand(),
             new SkillsCommand(),
             new MemoryCommand(),
+            new TodosCommand(),
         };
         self = new SlashRegistry(commands);
         return self;
@@ -388,6 +398,61 @@ internal sealed class MemoryCommand : ISlashCommand
             var name = Path.GetFileName(f);
             var size = new FileInfo(f).Length;
             Console.WriteLine($"  {name}  ({size.ToString("N0", CultureInfo.InvariantCulture)} bytes)");
+        }
+        Console.WriteLine();
+        return SlashAction.Continue;
+    }
+}
+
+internal sealed class TodosCommand : ISlashCommand
+{
+    public string Name => "/todos";
+    public string Description => "List the agent's todo items (✓ done, ☐ pending) from TodoProvider";
+
+    public SlashAction Run(SlashContext ctx)
+    {
+        // The provider holds the list in-memory for the current session and
+        // mirrors it into the session bag for persistence. We can't mirror
+        // disk state the way /skills and /memory do — there is no disk
+        // state. So we call into the provider directly.
+        //
+        // GetAllTodosAsync is async but we're in a sync ISlashCommand.Run
+        // contract; the call is local-memory-only (no IO, no model round
+        // trip), so a GetResult here is fine. If the framework ever moves
+        // todos to async storage (vector DB, remote service), this needs
+        // refactoring — flagged in the chapter.
+#pragma warning disable MAAI001    // TodoItem.
+        IReadOnlyList<Microsoft.Agents.AI.TodoItem> items;
+#pragma warning restore MAAI001
+        try
+        {
+            items = ctx.Todos.GetAllTodosAsync(ctx.Session).GetAwaiter().GetResult();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine();
+            Console.WriteLine($"(error reading todos: {ex.GetType().Name}: {ex.Message})\n");
+            return SlashAction.Continue;
+        }
+
+        Console.WriteLine();
+        if (items.Count == 0)
+        {
+            Console.WriteLine("(no todos — the model hasn't planned any work in this session yet.)\n");
+            return SlashAction.Continue;
+        }
+
+        var doneCount = items.Count(t => t.IsComplete);
+        Console.WriteLine($"Todos ({doneCount}/{items.Count} done):");
+        foreach (var t in items.OrderBy(t => t.Id))
+        {
+            var marker = t.IsComplete ? "✓" : "☐";
+            // Title can be empty if the model only set Description; fall
+            // back so the line is never just a marker.
+            var label = !string.IsNullOrWhiteSpace(t.Title) ? t.Title : t.Description;
+            Console.WriteLine($"  {marker} [{t.Id}] {label}");
+            if (!string.IsNullOrWhiteSpace(t.Description) && t.Description != t.Title)
+                Console.WriteLine($"        {t.Description}");
         }
         Console.WriteLine();
         return SlashAction.Continue;

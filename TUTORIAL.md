@@ -76,7 +76,7 @@ The single project at the repo root grows with each step. Run [`dotnet run`](REA
 |---|---|---|
 | 11 | [Project-context auto-load via `AgentSkillsProvider`](tutorial/11-skills.md) | ✅ done |
 | 12 | [Cross-session memory via `FileMemoryProvider`](tutorial/12-memory.md) | ✅ done |
-| 13 | Todo tracking (`TodoProvider`) | _planned_ |
+| 13 | [Todo tracking via `TodoProvider`](tutorial/13-todos.md) | ✅ done |
 
 ### Milestone 6 — Power features
 | # | Step | Status |

@@ -31,8 +31,14 @@
 //          skills: every session sees the same WorkingFolder, so notes the
 //          model writes survive across sessions. Live probe confirmed the
 //          provider auto-registers file tools — no harness wiring needed.
+//  Step 13: + TodoProvider — fourth AIContextProvider. Always-on (no
+//          disk state, no setup). Auto-registers 5 tools (TodoList_Add,
+//          _Complete, _Remove, _GetRemaining, _GetAll). Build() return
+//          shape changes from AIAgent to a small record so the harness
+//          can call provider.GetAllTodosAsync(session) for /todos —
+//          first provider whose read-side API matters to the harness.
 //  Future steps wire more in here without touching Program.cs:
-//    - Step 13+: TodoProvider, …
+//    - Step 14+: hooks/middleware, SubAgentsProvider, MCP, budgets …
 //
 //  Wrap order is inside-out: raw model → LoggingAgent → OpenTelemetryAgent →
 //  ToolApprovalAgent. The principle is "outer is closer to the user":
@@ -117,7 +123,18 @@ public static class AgentBuilder
     public static readonly IReadOnlySet<string> DefaultRequireApproval =
         new HashSet<string>(StringComparer.Ordinal) { "write_file", "edit_file", "bash" };
 
-    public static AIAgent Build(
+    /// <summary>
+    /// What Build() hands back. Started as a bare AIAgent; Step 13 grew it
+    /// to a small record because /todos needs to call TodoProvider.GetAllTodosAsync
+    /// directly. New providers with harness-relevant read APIs go here too —
+    /// keep the record minimal but explicit (no static caches, no service
+    /// locator).
+    /// </summary>
+#pragma warning disable MAAI001
+    public sealed record BuildResult(AIAgent Agent, TodoProvider Todos);
+#pragma warning restore MAAI001
+
+    public static BuildResult Build(
         string apiKey,
         AgentConfig? config,
         ILoggerFactory loggerFactory,
@@ -239,6 +256,36 @@ public static class AgentBuilder
             providers.Add(memoryProvider);
         }
 
+        // Step 13: TodoProvider — always on, no opt-in required (no disk
+        // state, no setup). The framework auto-registers 5 tools the model
+        // uses to manipulate the list — verified live with the "list every
+        // tool" probe (Step 11's lesson, applied before designing):
+        //   TodoList_Add        — create an item (Title + Description)
+        //   TodoList_Complete   — flip IsComplete = true on an item id
+        //   TodoList_Remove     — delete an item by id
+        //   TodoList_GetAll     — read all items
+        //   TodoList_GetRemaining — read incomplete items only
+        //
+        // TodoProvider exposes GetAllTodosAsync(session) / GetRemainingTodosAsync(session)
+        // as C# methods too — that's how /todos reads the list in the
+        // harness. We hold a reference to the provider in BuildResult so
+        // ChatLoop can pass it into SlashContext.
+        //
+        // SuppressTodoListMessage is left at default (false) so the
+        // framework injects the current list into the system prompt every
+        // turn — that's the entire point.
+#pragma warning disable MAAI001
+        var todoProvider = new TodoProvider(new TodoProviderOptions
+        {
+            Instructions =
+                "When the user asks for multi-step work, plan it as a todo list FIRST: " +
+                "add an item per major step with TodoList_Add, then work through them, " +
+                "calling TodoList_Complete as you finish each. " +
+                "The user can see your current list at any time with /todos.",
+        });
+#pragma warning restore MAAI001
+        providers.Add(todoProvider);
+
         var options = new ChatClientAgentOptions
         {
             Name = "ClaudeChat",
@@ -272,8 +319,9 @@ public static class AgentBuilder
         // rather than project-wide because it should stay visible: when MAF
         // moves the type, we want the warning back to flag the migration.
 #pragma warning disable MAAI001
-        return new ToolApprovalAgent(inner, JsonSerializerOptions.Default);
+        var wrapped = new ToolApprovalAgent(inner, JsonSerializerOptions.Default);
 #pragma warning restore MAAI001
+        return new BuildResult(wrapped, todoProvider);
     }
 
     /// <summary>
