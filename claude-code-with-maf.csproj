@@ -19,12 +19,12 @@
       Symptom (without pins): SubAgentsProvider's execution path throws
       `MissingMethodException` for `WebSearchToolResultContent.get_Results()`
       because three transitive Microsoft.Extensions.AI.Abstractions
-      versions (9.5.0 / 10.4.0 / 10.5.1) resolve into the dep graph and
+      versions (9.5.0 / 10.4.0 / 10.5.2) resolve into the dep graph and
       a stale Anthropic SDK (12.13.0) drives Microsoft.Agents.AI.Anthropic
       down a code path that references types from an older shape.
 
       Two pins fix it:
-        - Microsoft.Extensions.AI[.Abstractions] @ 10.5.1 unifies version
+        - Microsoft.Extensions.AI[.Abstractions] @ 10.5.2 unifies version
           resolution across the graph.
         - Anthropic @ 12.20.1 ("provider dependency") gets us off the
           12.13.0 transitive default; the official MAF guidance is

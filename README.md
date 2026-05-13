@@ -213,16 +213,24 @@ AgentSession session = await agent.DeserializeSessionAsync(sessionElem);
 
 ## Notes
 
-The package is prerelease and the MS Learn samples have drifted from the actual API. As of this commit:
+The package is prerelease. Two kinds of drift bite:
+
+**1. MS Learn samples drifted from the actual API.** As of this commit, the published samples still show the old names:
 
 | MS Learn sample | Actual API |
 |---|---|
 | `APIKey` | `ApiKey` |
 | `AgentThread` | `AgentSession` |
 | `agent.GetNewThread()` | `await agent.CreateSessionAsync()` |
-| `WebSearchToolResultContent.Results` | `WebSearchToolResultContent.Outputs` (broke Step 15 sub-agent execution before two csproj pins resolved it: `Microsoft.Extensions.AI[.Abstractions]` @ 10.5.1 unifies the M.E.AI graph; `Anthropic` SDK @ 12.20.1 removes the stale-API references the Microsoft adapter was driving) |
 
-Names verified by reflecting on the restored DLLs. Expect more drift on each prerelease bump.
+Names verified by reflecting on the restored DLLs.
+
+**2. Package version drift.** Step 15 surfaced one of these: `SubAgentsProvider`'s execution path threw `MissingMethodException` for `WebSearchToolResultContent.get_Results()` because the property was renamed `Results` → `Outputs` between Anthropic SDK 12.13.0 (the version `Microsoft.Agents.AI.Anthropic` 1.5.0-preview originally targeted) and 12.20.1 (current). Two csproj pins fix it:
+
+- `Microsoft.Extensions.AI[.Abstractions]` @ **10.5.2** — unifies the M.E.AI graph (three transitive versions otherwise resolve in).
+- `Anthropic` @ **12.20.1** — MAF's own release note: *"upgrade the provider dependency to 12.20.0 or later to remove references to stale APIs."*
+
+Expect more drift on each prerelease bump. The workshop's working assumption: when something doesn't compile, reflect on the restored DLLs to find the real names rather than trusting web docs.
 
 ## What's next
 
