@@ -23,6 +23,7 @@
 
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
+using Anthropic.Exceptions;
 using ClaudeChat.Config;
 using ClaudeChat.Harness.Commands;
 using ClaudeChat.Observability;
@@ -42,13 +43,16 @@ public static class ChatLoop
         string? preview,
         AgentConfig? agentConfig,
         Microsoft.Agents.AI.TodoProvider todos,
-        ApprovalState approval)
+        ApprovalState approval,
+        AgentGovernance.GovernanceKernel? governance,
+        IReadOnlyList<AgentGovernance.Audit.GovernanceEvent> auditTrail)
 #pragma warning restore MAAI001
     {
         // Step 7: registry + state objects that the slash commands and the
         // approval prompt share. Step 16 moved ApprovalState construction
         // out to Program.cs so AgentBuilder's MCP middleware can capture
-        // it; ChatLoop just receives it now.
+        // it; ChatLoop just receives it now. Step 17 added governance +
+        // auditTrail for /governance.
         var registry = SlashRegistry.Default();
         var sessionUsage = new UsageAccumulator();
         var ctx = new SlashContext
@@ -63,6 +67,8 @@ public static class ChatLoop
             SessionUsage = sessionUsage,
             Approval     = approval,
             Todos        = todos,
+            Governance   = governance,
+            AuditTrail   = auditTrail,
         };
 
         Console.WriteLine($"Model: {model}. Type /help for commands.\n");
@@ -192,6 +198,33 @@ public static class ChatLoop
             {
                 interrupted = true;
                 Console.WriteLine("\n(interrupted)");
+            }
+            catch (AnthropicRateLimitException ex)
+            {
+                // Anthropic 429. Surfaced during Step 17 verification: a
+                // busy smoke-test day blew through the per-minute quota.
+                // Before this catch, the exception bubbled all the way
+                // up and crashed the process — eating the saved session
+                // in the process. Now: print a friendly message, fall
+                // through to the prompt, session intact.
+                Console.WriteLine();
+                Console.WriteLine("(Anthropic API rate-limited — wait ~60 seconds and try again.)");
+                Console.WriteLine($"  detail: {ex.Message}");
+            }
+            catch (AnthropicException ex)
+            {
+                // Any other Anthropic API error (5xx, auth, malformed
+                // request, etc.). Treat the same way: print, continue.
+                Console.WriteLine();
+                Console.WriteLine($"(Anthropic API error: {ex.GetType().Name}: {ex.Message})");
+                Console.WriteLine("(session is intact — try again or /exit)");
+            }
+            catch (HttpRequestException ex)
+            {
+                // Transport-level failure (DNS, connection reset, etc.).
+                Console.WriteLine();
+                Console.WriteLine($"(network error talking to Anthropic: {ex.Message})");
+                Console.WriteLine("(session is intact — try again or /exit)");
             }
             finally
             {

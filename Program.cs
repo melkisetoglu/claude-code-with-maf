@@ -239,7 +239,7 @@ else
     Console.WriteLine($"Started new session: {sessionId}");
 }
 
-await ChatLoop.RunAsync(agent, model, sessionId, session, createdAt, preview, agentConfig, built.Todos, approvalState);
+await ChatLoop.RunAsync(agent, model, sessionId, session, createdAt, preview, agentConfig, built.Todos, approvalState, built.Governance, built.AuditTrail);
 tracerProvider?.Dispose();
 return 0;
 

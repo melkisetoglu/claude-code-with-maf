@@ -27,6 +27,7 @@
 //    - Step 13 adds /todos — lists items from TodoProvider's in-session state.
 //    - Step 15 adds /agents — lists configured sub-agents.
 //    - Step 16 adds /mcp — lists configured MCP servers from agent.json.
+//    - Step 17 adds /governance — shows AGT policy state + recent audit.
 // =============================================================================
 
 using System.Globalization;
@@ -69,6 +70,15 @@ public sealed class SlashContext
 #pragma warning disable MAAI001
     public TodoProvider Todos { get; init; } = null!;
 #pragma warning restore MAAI001
+
+    // Step 17: governance kernel + audit trail surfaced by /governance.
+    // Both null when no ./policies/default.yaml is present (governance
+    // not attached). When attached, AuditTrail is shared with AgentBuilder
+    // via a thread-safe-ish append pattern (single writer thread from the
+    // kernel's OnAllEvents callback; reader takes a snapshot under a lock).
+    public AgentGovernance.GovernanceKernel? Governance { get; init; }
+    public IReadOnlyList<AgentGovernance.Audit.GovernanceEvent> AuditTrail { get; init; } =
+        Array.Empty<AgentGovernance.Audit.GovernanceEvent>();
 }
 
 public sealed class SlashRegistry
@@ -130,6 +140,7 @@ public sealed class SlashRegistry
             new TodosCommand(),
             new AgentsCommand(),
             new McpCommand(),
+            new GovernanceCommand(),
         };
         self = new SlashRegistry(commands);
         return self;
@@ -529,6 +540,55 @@ internal sealed class McpCommand : ISlashCommand
                 Console.WriteLine($"    allowedTools : {string.Join(", ", s.AllowedTools)}");
             if (s.Headers is { Count: > 0 })
                 Console.WriteLine($"    headers      : {s.Headers.Count} (values redacted; keys: {string.Join(", ", s.Headers.Keys)})");
+        }
+        Console.WriteLine();
+        return SlashAction.Continue;
+    }
+}
+
+internal sealed class GovernanceCommand : ISlashCommand
+{
+    public string Name => "/governance";
+    public string Description => "Show AGT policy state + recent audit events";
+
+    public SlashAction Run(SlashContext ctx)
+    {
+        Console.WriteLine();
+        if (ctx.Governance is null)
+        {
+            Console.WriteLine($"(no ./{AgentBuilder.PoliciesDirectoryName}/{AgentBuilder.DefaultPolicyFileName} — Microsoft.AgentGovernance not attached.)");
+            Console.WriteLine($"create ./{AgentBuilder.PoliciesDirectoryName}/{AgentBuilder.DefaultPolicyFileName} to opt in (see tutorial/17-governance.md).");
+            Console.WriteLine();
+            return SlashAction.Continue;
+        }
+
+        Console.WriteLine($"Governance: Microsoft.AgentGovernance attached");
+        Console.WriteLine($"  agent id : {AgentBuilder.GovernanceAgentId}");
+        Console.WriteLine($"  policy   : ./{AgentBuilder.PoliciesDirectoryName}/{AgentBuilder.DefaultPolicyFileName}");
+
+        // Snapshot audit trail under the same lock AgentBuilder uses to
+        // write. The list lives behind the kernel's OnAllEvents callback;
+        // we read the latest N events.
+        AgentGovernance.Audit.GovernanceEvent[] snapshot;
+        lock (ctx.AuditTrail)
+        {
+            snapshot = ctx.AuditTrail.ToArray();
+        }
+
+        Console.WriteLine($"  events   : {snapshot.Length} total");
+        if (snapshot.Length == 0)
+        {
+            Console.WriteLine("  (no audit events yet — make a tool call to generate one)");
+            Console.WriteLine();
+            return SlashAction.Continue;
+        }
+
+        // Show the last 5 events. AGT's GovernanceEvent shape is preview;
+        // ToString() gives a usable rendering for our purposes.
+        Console.WriteLine($"  recent (last {Math.Min(5, snapshot.Length)}):");
+        foreach (var evt in snapshot.TakeLast(5))
+        {
+            Console.WriteLine($"    {evt}");
         }
         Console.WriteLine();
         return SlashAction.Continue;

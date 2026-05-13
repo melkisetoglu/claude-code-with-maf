@@ -118,6 +118,7 @@ public sealed class SlashRegistryTests : IDisposable
         Assert.Contains("/todos", output);
         Assert.Contains("/agents", output);
         Assert.Contains("/mcp", output);
+        Assert.Contains("/governance", output);
     }
 
     [Fact]

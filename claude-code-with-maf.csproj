@@ -46,6 +46,19 @@
       preview adapter, so we go direct via the SDK.
     -->
     <PackageReference Include="ModelContextProtocol" Version="1.3.0" />
+    <!--
+      Step 17: Microsoft.AgentGovernance is the production-grade
+      governance layer that sits beside MAF (sibling project at
+      github.com/microsoft/agent-governance-toolkit). The .Extensions
+      package adds a one-line `.WithGovernance(...)` hook into the
+      AIAgentBuilder pipeline (Step 14). Covers budgets, rate limits,
+      circuit breakers, audit logging, prompt-injection detection —
+      everything Step 17 was going to hand-roll, plus the OWASP
+      Agentic Top 10. Public Preview at 3.6.0; same suppress-warnings-
+      narrowly discipline as MAAI001 applies if AGT renames internals.
+    -->
+    <PackageReference Include="Microsoft.AgentGovernance" Version="3.6.0" />
+    <PackageReference Include="Microsoft.AgentGovernance.Extensions.Microsoft.Agents" Version="3.6.0" />
   </ItemGroup>
 
   <!-- The default SDK glob would otherwise compile tests/**/*.cs into this

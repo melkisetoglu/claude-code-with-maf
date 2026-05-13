@@ -46,6 +46,18 @@
 //          version pins in the csproj (Microsoft.Extensions.AI[.Abstractions]
 //          @ 10.5.1 + Anthropic SDK @ 12.20.1) to remove stale-API
 //          references — see csproj comment for the trail.
+//  Step 17: + Microsoft.AgentGovernance via .WithGovernance(adapter).
+//          The workshop's capstone — instead of hand-rolling a budget
+//          enforcer, we attach AGT (Microsoft's production governance
+//          toolkit, sibling repo at github.com/microsoft/agent-governance-toolkit).
+//          One line on the AIAgentBuilder hooks AGT into the same
+//          middleware chain as our existing Logging/OTel/Approval/
+//          Timing pieces. Workshop reader graduates with hands-on
+//          experience of the production layer covering OWASP Agentic
+//          Top 10 — far beyond what Step 17's original budget-only
+//          plan would have shipped. Opt-in by ./policies/default.yaml
+//          existence (matches skills/, memory/ pattern). Audit trail
+//          captured in BuildResult so /governance can surface it.
 //  Step 16: + MCP server tools via the ModelContextProtocol 1.3.0 SDK.
 //          MAF ships HostedMcpServerTool (for Anthropic-hosted MCP) but
 //          its translation isn't wired through our preview Anthropic
@@ -103,6 +115,10 @@ using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Client;
+using AgentGovernance;
+using AgentGovernance.Audit;
+using AgentGovernance.Extensions.Microsoft.Agents;
+using AgentGovernance.Policy;
 using ClaudeChat.Config;
 using ClaudeChat.Harness.Commands;
 using ClaudeChat.Tools;
@@ -139,6 +155,18 @@ public static class AgentBuilder
     // Constant so the slash command and tests can refer to the same name
     // without string-typing it.
     public const string ResearcherAgentName = "researcher";
+
+    // Step 17: Microsoft.AgentGovernance opt-in directory. If
+    // ./policies/default.yaml exists at startup, the GovernanceKernel
+    // is constructed against it and attached via .WithGovernance(adapter).
+    // Absent = no governance attached; the agent behaves as Step 16 did.
+    public const string PoliciesDirectoryName = "policies";
+    public const string DefaultPolicyFileName = "default.yaml";
+
+    // Step 17: stable identity for this workshop agent in audit records.
+    // Production deployments use DID (Decentralized Identifier) style
+    // strings; the workshop ships a recognizable one.
+    public const string GovernanceAgentId = "did:claudechat:main";
 
     public const string DefaultInstructions =
         "You are a helpful assistant. Keep replies concise. " +
@@ -184,7 +212,14 @@ public static class AgentBuilder
     /// locator).
     /// </summary>
 #pragma warning disable MAAI001
-    public sealed record BuildResult(AIAgent Agent, TodoProvider Todos);
+    public sealed record BuildResult(
+        AIAgent Agent,
+        TodoProvider Todos,
+        // Step 17: AGT governance kernel + a shared audit trail list the
+        // /governance slash command reads. Both null when no
+        // ./policies/default.yaml exists (governance not attached).
+        GovernanceKernel? Governance,
+        IReadOnlyList<GovernanceEvent> AuditTrail);
 #pragma warning restore MAAI001
 
     public static BuildResult Build(
@@ -457,8 +492,34 @@ public static class AgentBuilder
             .Use(ToolTimingMiddleware);
 #pragma warning restore MAAI001
 
+        // Step 17: attach Microsoft.AgentGovernance via .WithGovernance.
+        // Opt-in by ./policies/default.yaml existence (same as skills/
+        // and memory/). The audit trail is a shared list the slash
+        // command reads; we subscribe via kernel.OnAllEvents.
+        GovernanceKernel? governanceKernel = null;
+        var auditTrail = new List<GovernanceEvent>();
+        var policyPath = Path.Combine(Directory.GetCurrentDirectory(), PoliciesDirectoryName, DefaultPolicyFileName);
+        if (File.Exists(policyPath))
+        {
+            governanceKernel = new GovernanceKernel(new GovernanceOptions
+            {
+                PolicyPaths = new List<string> { policyPath },
+                ConflictStrategy = ConflictResolutionStrategy.PriorityFirstMatch,
+                EnableAudit = true,
+                EnableCircuitBreaker = true,
+            });
+            governanceKernel.OnAllEvents(evt => { lock (auditTrail) auditTrail.Add(evt); });
+
+            var adapter = new AgentFrameworkGovernanceAdapter(governanceKernel, new AgentFrameworkGovernanceOptions
+            {
+                DefaultAgentId = GovernanceAgentId,
+                EnableFunctionMiddleware = true,
+            });
+            builder = builder.WithGovernance(adapter);
+        }
+
         var wrapped = builder.Build(serviceProvider);
-        return new BuildResult(wrapped, todoProvider);
+        return new BuildResult(wrapped, todoProvider, governanceKernel, auditTrail);
     }
 
     /// <summary>

@@ -1,0 +1,32 @@
+apiVersion: governance.toolkit/v1
+version: "1.0"
+name: claudechat-default
+description: |
+  Workshop default governance policy. Demonstrates AGT's three modes:
+  rate limiting (visible enforcement), require_approval (composes with
+  Step 3's gate), and rule-based deny (catches dangerous patterns).
+  Default action is allow so the agent runs normally; rules below
+  override for specific tools.
+default_action: allow
+
+rules:
+  # Bash is the workshop's most powerful tool — process spawn, shell
+  # exec, full filesystem reach. Approval-gated already (Step 4), but
+  # cap the rate so a runaway loop can't blast 100 commands at once.
+  - name: rate-limit-bash
+    condition: "tool_name == 'bash'"
+    action: rate_limit
+    limit: "5/minute"
+    priority: 10
+
+  # MCP browser tools (Step 16 — Playwright MCP). Cheaper to gate by
+  # tool-name prefix than per-tool rules.
+  - name: rate-limit-browser
+    condition: "starts_with(tool_name, 'browser_')"
+    action: rate_limit
+    limit: "10/minute"
+    priority: 10
+
+  # Catch-all observability — every tool call generates an audit event
+  # when default_action is allow. The /governance slash command shows
+  # the recent trail.
