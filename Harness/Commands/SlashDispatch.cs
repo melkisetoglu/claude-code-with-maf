@@ -26,6 +26,7 @@
 //    - Step 12 adds /memory — lists files written by FileMemoryProvider.
 //    - Step 13 adds /todos — lists items from TodoProvider's in-session state.
 //    - Step 15 adds /agents — lists configured sub-agents.
+//    - Step 16 adds /mcp — lists configured MCP servers from agent.json.
 // =============================================================================
 
 using System.Globalization;
@@ -128,6 +129,7 @@ public sealed class SlashRegistry
             new MemoryCommand(),
             new TodosCommand(),
             new AgentsCommand(),
+            new McpCommand(),
         };
         self = new SlashRegistry(commands);
         return self;
@@ -484,6 +486,50 @@ internal sealed class AgentsCommand : ISlashCommand
         Console.WriteLine("    model : same as main agent");
         Console.WriteLine();
         Console.WriteLine("The main agent delegates via SubAgents_StartTask(agentName, input).");
+        Console.WriteLine();
+        return SlashAction.Continue;
+    }
+}
+
+internal sealed class McpCommand : ISlashCommand
+{
+    public string Name => "/mcp";
+    public string Description => "List configured MCP servers (Step 16; from agent.json mcpServers)";
+
+    public SlashAction Run(SlashContext ctx)
+    {
+        // Reads agent.json directly via ctx.Config. MCP servers are
+        // config-time things (URL, approval mode, headers) — we don't
+        // need to query the framework's HostedMcpServerTool instances
+        // for this listing; the config is the source of truth.
+        //
+        // Header VALUES are redacted in the output even though we have
+        // them on disk — they're often bearer tokens or API keys. Show
+        // only the count + key names. (Stretch: full redaction policy
+        // configurable.)
+        var servers = ctx.Config?.McpServers;
+        Console.WriteLine();
+        if (servers is null || servers.Count == 0)
+        {
+            Console.WriteLine("(no MCP servers configured — add an `mcpServers` entry to agent.json to opt in.)");
+            Console.WriteLine("see tutorial/16-mcp.md for an example pointing at Playwright MCP.");
+            Console.WriteLine();
+            return SlashAction.Continue;
+        }
+
+        Console.WriteLine($"Configured MCP servers ({servers.Count}):");
+        foreach (var s in servers)
+        {
+            Console.WriteLine($"  {s.Name}");
+            Console.WriteLine($"    address      : {s.Address}");
+            if (!string.IsNullOrWhiteSpace(s.Description))
+                Console.WriteLine($"    description  : {s.Description}");
+            Console.WriteLine($"    approvalMode : {s.ApprovalMode ?? "always (default)"}");
+            if (s.AllowedTools is { Count: > 0 })
+                Console.WriteLine($"    allowedTools : {string.Join(", ", s.AllowedTools)}");
+            if (s.Headers is { Count: > 0 })
+                Console.WriteLine($"    headers      : {s.Headers.Count} (values redacted; keys: {string.Join(", ", s.Headers.Keys)})");
+        }
         Console.WriteLine();
         return SlashAction.Continue;
     }

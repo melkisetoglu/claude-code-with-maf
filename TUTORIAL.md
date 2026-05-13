@@ -83,7 +83,7 @@ The single project at the repo root grows with each step. Run [`dotnet run`](REA
 |---|---|---|
 | 14 | [Hooks / middleware via the `AIAgentBuilder` pipeline](tutorial/14-middleware.md) | ✅ done |
 | 15 | [Sub-agents via `SubAgentsProvider`](tutorial/15-subagents.md) | ✅ done |
-| 16 | MCP server integration | _planned_ |
+| 16 | [MCP server integration via the standalone SDK](tutorial/16-mcp.md) | ✅ done |
 | 17 | Budgets & circuit breakers | _planned_ |
 
 ---

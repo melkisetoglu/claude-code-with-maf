@@ -25,6 +25,7 @@ using OpenTelemetry.Trace;
 using ClaudeChat.Agent;
 using ClaudeChat.Config;
 using ClaudeChat.Harness;
+using ClaudeChat.Harness.Commands;
 using ClaudeChat.Observability;
 using ClaudeChat.Persistence;
 
@@ -155,6 +156,14 @@ if (enableOtel)
         .Build();
 }
 
+// Step 16 fix: ApprovalState moves out of ChatLoop and into Program.cs so
+// AgentBuilder can capture it for the MCP approval middleware. The state is
+// shared between the workshop's existing approval gate (via ToolApprovalAgent
+// + ApprovalRequiredAIFunction for workshop tools) and the new function-
+// invocation middleware that gates MCP tools (which can't use the framework's
+// approval flow — see Step 16 chapter for the diagnosis).
+var approvalState = new ApprovalState();
+
 AgentBuilder.BuildResult built;
 try
 {
@@ -162,6 +171,7 @@ try
         apiKey,
         agentConfig,
         loggerFactory,
+        approvalState,
         enableOtel,
         modelOverride: !string.IsNullOrEmpty(modelEnv) ? modelEnv : null);
 }
@@ -229,7 +239,7 @@ else
     Console.WriteLine($"Started new session: {sessionId}");
 }
 
-await ChatLoop.RunAsync(agent, model, sessionId, session, createdAt, preview, agentConfig, built.Todos);
+await ChatLoop.RunAsync(agent, model, sessionId, session, createdAt, preview, agentConfig, built.Todos, approvalState);
 tracerProvider?.Dispose();
 return 0;
 

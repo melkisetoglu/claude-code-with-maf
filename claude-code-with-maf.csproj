@@ -34,9 +34,18 @@
 
       Re-evaluate when MAF previews stabilise.
     -->
-    <PackageReference Include="Microsoft.Extensions.AI" Version="10.5.1" />
-    <PackageReference Include="Microsoft.Extensions.AI.Abstractions" Version="10.5.1" />
+    <PackageReference Include="Microsoft.Extensions.AI" Version="10.5.2" />
+    <PackageReference Include="Microsoft.Extensions.AI.Abstractions" Version="10.5.2" />
     <PackageReference Include="Anthropic" Version="12.20.1" />
+    <!--
+      Step 16: the ModelContextProtocol SDK provides the client/transport
+      we use to connect to local MCP servers (e.g., Playwright MCP via
+      `npx @playwright/mcp@latest port 8931`). MAF's HostedMcpServerTool
+      abstraction targets Anthropic's hosted MCP (where Anthropic's API
+      reaches the server) and its translation isn't wired through our
+      preview adapter, so we go direct via the SDK.
+    -->
+    <PackageReference Include="ModelContextProtocol" Version="1.3.0" />
   </ItemGroup>
 
   <!-- The default SDK glob would otherwise compile tests/**/*.cs into this

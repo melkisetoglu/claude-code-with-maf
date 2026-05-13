@@ -23,11 +23,40 @@ namespace ClaudeChat.Config;
 public sealed record AgentConfig(
     string? Model,
     string? Instructions,
-    ToolsConfig? Tools);
+    ToolsConfig? Tools,
+    IReadOnlyList<McpServerConfig>? McpServers);
 
 public sealed record ToolsConfig(
     IReadOnlyList<string>? Allow,
     IReadOnlyList<string>? RequireApproval);
+
+/// <summary>
+/// Step 16 — describes one MCP server the agent should expose to the model.
+///
+/// Maps to <c>Microsoft.Extensions.AI.HostedMcpServerTool</c>. Each entry in
+/// <c>agent.json.mcpServers</c> becomes one AITool added to the agent's tool
+/// list; the framework handles transport (HTTP/SSE) to the server URL.
+///
+/// Fields:
+///   - <see cref="Name"/>     : friendly identifier shown to the model + in /tools.
+///   - <see cref="Address"/>  : full URL, e.g. "http://localhost:8931/mcp" for
+///                              a locally-running Playwright MCP server started with
+///                              <c>npx @playwright/mcp@latest --port 8931</c>.
+///   - <see cref="Description"/>: optional human-readable description that flows
+///                              into the model's system prompt.
+///   - <see cref="ApprovalMode"/>: "always" (default) / "never" — gating policy.
+///                              Object form for per-tool granularity is a stretch.
+///   - <see cref="AllowedTools"/>: optional allowlist of server-side tool names
+///                              the model is permitted to call.
+///   - <see cref="Headers"/>  : optional HTTP headers (e.g. for bearer auth).
+/// </summary>
+public sealed record McpServerConfig(
+    string Name,
+    string Address,
+    string? Description,
+    string? ApprovalMode,
+    IReadOnlyList<string>? AllowedTools,
+    IReadOnlyDictionary<string, string>? Headers);
 
 public static class AgentConfigLoader
 {

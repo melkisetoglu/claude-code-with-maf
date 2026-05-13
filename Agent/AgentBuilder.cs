@@ -46,6 +46,21 @@
 //          version pins in the csproj (Microsoft.Extensions.AI[.Abstractions]
 //          @ 10.5.1 + Anthropic SDK @ 12.20.1) to remove stale-API
 //          references — see csproj comment for the trail.
+//  Step 16: + MCP server tools via the ModelContextProtocol 1.3.0 SDK.
+//          MAF ships HostedMcpServerTool (for Anthropic-hosted MCP) but
+//          its translation isn't wired through our preview Anthropic
+//          adapter (verified live — tool never reached the model). We
+//          go direct via the SDK: for each agent.json mcpServers entry,
+//          we open an HttpClientTransport, create an McpClient, and
+//          call ListToolsAsync() to discover the server's tools. Each
+//          McpClientTool extends AIFunction directly, so we add them
+//          to the tool list with zero adapter code — optionally wrapped
+//          with ApprovalRequiredAIFunction when approvalMode = "always"
+//          (default). That routes MCP calls through our existing Step 3
+//          ToolApprovalAgent — same gate UX as write_file / bash. Live
+//          smoke verified with Playwright MCP (npx @playwright/mcp port
+//          8931): tools discovered, model sees them, approval gate
+//          fires before each invocation.
 //  Step 14: switch the wrap chain from imperative constructor calls to
 //          the framework's AIAgentBuilder + .UseX() extension methods.
 //          Same final behaviour, fluent shape:
@@ -87,7 +102,9 @@ using Microsoft.Agents.AI.Compaction;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using ModelContextProtocol.Client;
 using ClaudeChat.Config;
+using ClaudeChat.Harness.Commands;
 using ClaudeChat.Tools;
 
 namespace ClaudeChat.Agent;
@@ -174,6 +191,7 @@ public static class AgentBuilder
         string apiKey,
         AgentConfig? config,
         ILoggerFactory loggerFactory,
+        ApprovalState approvalState,
         bool enableOtel = false,
         string? modelOverride = null)
     {
@@ -188,6 +206,21 @@ public static class AgentBuilder
         var instructions = config?.Instructions ?? DefaultInstructions;
 
         var tools = ResolveTools(config?.Tools);
+
+        // Step 16: connect to any configured MCP servers and append their
+        // tools. Sync-over-async because Build() is sync; the cost is one
+        // round-trip per server at startup. Each McpClientTool extends
+        // AIFunction directly, so we add them straight to the tool list —
+        // but we DON'T wrap with ApprovalRequiredAIFunction (verified live:
+        // that path's broken for McpClientTool — after approval the
+        // framework never invokes the tool, model loops). Approval-required
+        // MCP tools land in `mcpApprovalRequired` instead; the function-
+        // invocation middleware below gates them with the same
+        // [y/N/a=always] UX.
+        var mcpApprovalRequired = new HashSet<string>(StringComparer.Ordinal);
+        AppendMcpServerToolsAsync(tools, config?.McpServers, loggerFactory,
+                                  mcpApprovalRequired, CancellationToken.None)
+            .GetAwaiter().GetResult();
 
         // Step 10: switching from the AsAIAgent(model, instructions, …)
         // shortcut to the AsAIAgent(ChatClientAgentOptions) overload because
@@ -419,6 +452,8 @@ public static class AgentBuilder
 #pragma warning disable MAAI001
         builder = builder
             .UseToolApproval(JsonSerializerOptions.Default)
+            .Use((agent, fnCtx, next, ct) =>
+                McpApprovalMiddleware(fnCtx, next, ct, approvalState, mcpApprovalRequired))
             .Use(ToolTimingMiddleware);
 #pragma warning restore MAAI001
 
@@ -542,5 +577,183 @@ public static class AgentBuilder
                 : (AITool)fn);
         }
         return result;
+    }
+
+    /// <summary>
+    /// Step 16 — for each agent.json mcpServers entry, connect to the
+    /// server via the ModelContextProtocol SDK, discover its tools, and
+    /// append them to the tools list. McpClientTool extends AIFunction
+    /// directly so we add them straight to the list — no wrapping.
+    ///
+    /// When approvalMode is "always" (the default), each tool's name is
+    /// added to <paramref name="approvalRequiredNames"/> so the function-
+    /// invocation middleware (McpApprovalMiddleware) can gate it. We
+    /// can't use ApprovalRequiredAIFunction here because the framework's
+    /// approval flow doesn't invoke McpClientTool after approval —
+    /// verified live (model loops; the bug is documented in the chapter).
+    ///
+    /// Failure to connect throws InvalidOperationException with a clear
+    /// message naming the failing server.
+    /// </summary>
+    public static async Task AppendMcpServerToolsAsync(
+        List<AITool> tools,
+        IReadOnlyList<McpServerConfig>? servers,
+        ILoggerFactory loggerFactory,
+        HashSet<string> approvalRequiredNames,
+        CancellationToken cancellationToken)
+    {
+        if (servers is null || servers.Count == 0) return;
+
+        foreach (var s in servers)
+        {
+            var (clientTools, _) = await ConnectAndListToolsAsync(s, loggerFactory, cancellationToken);
+
+            var requireApproval = NormalisedMcpApprovalMode(s) == "always";
+
+            // Optional allowedTools filter — clip the server's tool list
+            // to a subset declared in agent.json.
+            IEnumerable<McpClientTool> filtered = clientTools;
+            if (s.AllowedTools is { Count: > 0 })
+            {
+                var allow = new HashSet<string>(s.AllowedTools, StringComparer.Ordinal);
+                filtered = clientTools.Where(t => allow.Contains(t.Name));
+            }
+
+            foreach (var t in filtered)
+            {
+                tools.Add(t);
+                if (requireApproval)
+                    approvalRequiredNames.Add(t.Name);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Step 16 — function-invocation middleware that gates MCP tools.
+    /// Sits at the same seam as ToolTimingMiddleware (Step 14) and
+    /// composes with the existing ApprovalState (PlanMode beats YoloMode
+    /// beats AlwaysApprove, same precedence as Step 8).
+    ///
+    /// Why this instead of ApprovalRequiredAIFunction: that path's
+    /// approval response handler doesn't invoke McpClientTool after
+    /// approval (preview gap — verified live during Step 16). Function-
+    /// invocation middleware gives us direct control over `next(...)`
+    /// so we can invoke the tool ourselves once approved.
+    /// </summary>
+    private static async ValueTask<object?> McpApprovalMiddleware(
+        FunctionInvocationContext fnCtx,
+        Func<FunctionInvocationContext, CancellationToken, ValueTask<object?>> next,
+        CancellationToken ct,
+        ApprovalState approvalState,
+        HashSet<string> approvalRequiredNames)
+    {
+        var toolName = fnCtx.Function.Name;
+        if (!approvalRequiredNames.Contains(toolName))
+            return await next(fnCtx, ct);
+
+        // Plan mode wins — read-only stance for any approval-required tool.
+        if (approvalState.PlanMode)
+        {
+            Console.WriteLine($"  approve {toolName}? [denied: in plan mode]");
+            return "[denied: in plan mode — exit plan mode (/plan) and try again]";
+        }
+
+        // Yolo bypasses everything.
+        if (approvalState.YoloMode)
+        {
+            Console.WriteLine($"  approve {toolName}? [auto-approved (yolo)]");
+            return await next(fnCtx, ct);
+        }
+
+        // Per-tool "always" memory.
+        if (approvalState.AlwaysApprove.Contains(toolName))
+        {
+            Console.WriteLine($"  approve {toolName}? [auto-approved (always)]");
+            return await next(fnCtx, ct);
+        }
+
+        // Interactive prompt. Same shape as the workshop's existing
+        // ApprovalPrompt.Ask — but synchronous (we're in the
+        // function-invocation seam, blocking is fine).
+        Console.Write($"  approve {toolName}? [y/N/a=always]: ");
+        var answer = (Console.ReadLine() ?? "").Trim().ToLowerInvariant();
+        switch (answer)
+        {
+            case "y":
+            case "yes":
+                Console.WriteLine();
+                return await next(fnCtx, ct);
+            case "a":
+            case "always":
+                approvalState.AlwaysApprove.Add(toolName);
+                Console.WriteLine();
+                return await next(fnCtx, ct);
+            default:
+                Console.WriteLine("  → denied");
+                return $"[user denied this tool call: {toolName}]";
+        }
+    }
+
+    private static string NormalisedMcpApprovalMode(McpServerConfig s)
+    {
+        var mode = (s.ApprovalMode ?? "always").Trim().ToLowerInvariant();
+        return mode switch
+        {
+            "always" or "never" => mode,
+            _ => throw new InvalidOperationException(
+                $"agent.json mcpServers[{s.Name}].approvalMode: unknown value '{s.ApprovalMode}'. " +
+                $"valid: \"always\", \"never\"."),
+        };
+    }
+
+    private static async Task<(IList<McpClientTool> Tools, McpClient Client)> ConnectAndListToolsAsync(
+        McpServerConfig s,
+        ILoggerFactory loggerFactory,
+        CancellationToken ct)
+    {
+        var endpoint = ParseAddress(s);
+
+        var opts = new HttpClientTransportOptions
+        {
+            Endpoint = endpoint,
+            Name     = s.Name,
+        };
+        if (s.Headers is { Count: > 0 })
+        {
+            opts.AdditionalHeaders = s.Headers.ToDictionary(kv => kv.Key, kv => kv.Value);
+        }
+
+        try
+        {
+            var transport = new HttpClientTransport(opts, loggerFactory);
+            var client    = await McpClient.CreateAsync(transport, null, loggerFactory, ct);
+            var tools     = await client.ListToolsAsync(cancellationToken: ct);
+            return (tools, client);
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException(
+                $"failed to connect to MCP server '{s.Name}' at {s.Address}: " +
+                $"{ex.GetType().Name}: {ex.Message}. " +
+                $"is the server running? (e.g., `npx @playwright/mcp@latest --port 8931`)",
+                ex);
+        }
+    }
+
+    private static Uri ParseAddress(McpServerConfig s)
+    {
+        if (string.IsNullOrWhiteSpace(s.Address))
+            throw new InvalidOperationException(
+                $"agent.json mcpServers[{s.Name}].address is required (e.g., \"http://localhost:8931/mcp\").");
+        try
+        {
+            return new Uri(s.Address);
+        }
+        catch (UriFormatException ex)
+        {
+            throw new InvalidOperationException(
+                $"agent.json mcpServers[{s.Name}].address: '{s.Address}' is not a valid URI ({ex.Message}).",
+                ex);
+        }
     }
 }

@@ -41,13 +41,15 @@ public static class ChatLoop
         DateTime createdAt,
         string? preview,
         AgentConfig? agentConfig,
-        Microsoft.Agents.AI.TodoProvider todos)
+        Microsoft.Agents.AI.TodoProvider todos,
+        ApprovalState approval)
 #pragma warning restore MAAI001
     {
         // Step 7: registry + state objects that the slash commands and the
-        // approval prompt share.
+        // approval prompt share. Step 16 moved ApprovalState construction
+        // out to Program.cs so AgentBuilder's MCP middleware can capture
+        // it; ChatLoop just receives it now.
         var registry = SlashRegistry.Default();
-        var approval = new ApprovalState();
         var sessionUsage = new UsageAccumulator();
         var ctx = new SlashContext
         {

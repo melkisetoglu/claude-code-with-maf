@@ -117,6 +117,7 @@ public sealed class SlashRegistryTests : IDisposable
         Assert.Contains("/memory", output);
         Assert.Contains("/todos", output);
         Assert.Contains("/agents", output);
+        Assert.Contains("/mcp", output);
     }
 
     [Fact]
@@ -238,7 +239,8 @@ public sealed class SlashRegistryTests : IDisposable
         var config = new AgentConfig(
             Model: null,
             Instructions: null,
-            Tools: new ToolsConfig(Allow: new[] { "read_file", "grep" }, RequireApproval: null));
+            Tools: new ToolsConfig(Allow: new[] { "read_file", "grep" }, RequireApproval: null),
+            McpServers: null);
 
         registry.TryDispatch("/tools", MakeContext(config: config));
 
