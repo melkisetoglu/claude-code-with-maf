@@ -1,10 +1,57 @@
-# claude-code-with-maf
+# Claude Code with MAF
 
 A workshop that grows a Claude Code-style console agent on top of **Microsoft Agent Framework** in .NET, one step at a time.
 
 > **Following the workshop?** Read **[TUTORIAL.md](TUTORIAL.md)** for the step-by-step guide. This README is just "how to run it".
 
-Current state: streaming REPL with read-only navigation (`read_file`, `list_dir`, `glob`, `grep`) and approval-gated mutation tools (`write_file`, `edit_file`, `bash`), per-turn token/cost reporting, JSON-Lines file logging, optional OpenTelemetry tracing, external `agent.json` profiles (model/prompt/tools/approval rules), slash-command dispatcher (`/help`, `/tools`, `/cost`, `/model`, `/sessions`, `/yolo`, `/skills`, `/memory`, `/todos`, `/agents`, `/clear`, `/id`, `/exit`) with `/yolo` bypass and "always approve this tool" memory, plan mode (`/plan` toggles read-only; mutations auto-deny), streaming polish (Ctrl+C interrupts the in-flight turn, Braille spinner while waiting for first content, dim-cyan colour around ``` code blocks), automatic context compaction (`CompactionProvider` keeps long sessions inside the model's input budget — drops tool results at 50%, truncates at 80%), project-context auto-load (`AgentSkillsProvider` discovers `./skills/<name>/SKILL.md` files at startup, injects each skill's name+description into the system prompt, and auto-registers a `load_skill` tool so the model can fetch bodies on demand — Claude Code Skills convention, body-on-demand out of the box), cross-session memory (`FileMemoryProvider` rooted at `./memory/` — the model autonomously writes and reads notes across sessions via 5 framework-registered `FileMemory_*` tools; the framework maintains a `memories.md` index automatically), structured todo tracking (`TodoProvider` — the model plans multi-step work as a checklist, framework auto-registers 5 `TodoList_*` tools and auto-injects the current list into the system prompt each turn; survives session resume; `/todos` shows ✓/☐ at a glance), fluent middleware pipeline (`AgentBuilder.cs` uses `AIAgentBuilder.UseLogging().UseOpenTelemetry().UseToolApproval()` instead of imperative wrap chain; per-tool-call timing middleware via `FunctionInvocationDelegatingAgentBuilderExtensions.Use(...)` prints `→ Nms` after every tool call), sub-agent delegation (`SubAgentsProvider` configures one read-only "researcher" sub-agent — framework auto-registers 6 `SubAgents_*` tools for the main agent to delegate; the chapter's preview-drift fix story documents two version pins required to land the framework's execution path), MCP server integration (configure `mcpServers` in agent.json — at startup the agent connects via the standalone `ModelContextProtocol` 1.3.0 SDK, discovers each server's tools, and adds them to the model's tool list, optionally gated through the existing approval workflow; canonical example points at Playwright MCP running on localhost), **production governance via Microsoft.AgentGovernance** (opt-in by `./policies/default.yaml` — AGT attaches via one-line `builder.WithGovernance(adapter)` on the Step 14 builder, ships YAML-configured policy enforcement, rate limiting, circuit breakers, and tamper-proof audit logging; covers OWASP Agentic Top 10; `/governance` shows policy state + recent audit events), named sessions you can list and resume — Claude Code-style.
+## Current state
+
+The agent is **17 of 17 steps shipped** — a working Claude Code-style REPL on Claude, in C#, built on MAF. What it has:
+
+**Chat & sessions**
+- Streaming REPL on Claude via the official Anthropic SDK adapter.
+- Named persistent sessions: `--list`, `--continue`, `--resume <id-prefix>` (git/claude-style prefix match).
+- Session saved after every turn — Ctrl+C can't lose state.
+
+**Tools**
+- Read-only navigation: `read_file`, `list_dir`, `glob`, `grep`.
+- Approval-gated mutations: `write_file`, `edit_file`, `bash`.
+- Per-tool-call timing middleware prints `→ Nms` after every call.
+
+**Observability**
+- Per-turn token + cost reporting.
+- JSON-Lines file logging (`claudechat.log`).
+- Optional OpenTelemetry tracing (`--otel`).
+
+**Configuration**
+- External `agent.json` profile: model, system prompt, tool allowlist, approval rules, MCP servers.
+
+**Slash commands** (16 total)
+- `/help`, `/exit`, `/clear`, `/id`, `/model`, `/tools`, `/cost`, `/sessions` — basics.
+- `/yolo` — auto-approve-everything; "always approve this tool" memory at the approval prompt.
+- `/plan` — read-only mode; mutations auto-deny. Mutually exclusive with `/yolo`.
+- `/skills`, `/memory`, `/todos`, `/agents`, `/mcp`, `/governance` — surface state from each provider.
+
+**Streaming polish**
+- Ctrl+C interrupts the in-flight turn (process stays alive).
+- Braille spinner while waiting for first content.
+- Dim-cyan colour around ``` code fences.
+
+**Context compaction** — `CompactionProvider` keeps long sessions inside the model's input budget. Drops tool results at 50% of context, truncates at 80%.
+
+**Project-context auto-load** — `AgentSkillsProvider` discovers `./skills/<name>/SKILL.md` files at startup, injects each skill's name+description into the system prompt, and auto-registers a `load_skill` tool so the model fetches bodies on demand. Claude Code Skills convention, body-on-demand out of the box.
+
+**Cross-session memory** — `FileMemoryProvider` rooted at `./memory/`. The model autonomously writes and reads notes across sessions via 5 framework-registered `FileMemory_*` tools; the framework maintains a `memories.md` index automatically.
+
+**Structured todo tracking** — `TodoProvider`. The model plans multi-step work as a checklist; the framework auto-registers 5 `TodoList_*` tools and auto-injects the current list into the system prompt each turn. Survives session resume; `/todos` shows ✓/☐ at a glance.
+
+**Fluent middleware pipeline** — `AgentBuilder.cs` uses `AIAgentBuilder.UseLogging().UseOpenTelemetry().UseToolApproval()` instead of an imperative wrap chain. Per-tool-call timing middleware via `FunctionInvocationDelegatingAgentBuilderExtensions.Use(...)`.
+
+**Sub-agent delegation** — `SubAgentsProvider` configures one read-only "researcher" sub-agent. Framework auto-registers 6 `SubAgents_*` tools for the main agent to delegate. The chapter's preview-drift fix story documents two version pins required to land the framework's execution path.
+
+**MCP server integration** — configure `mcpServers` in `agent.json`. At startup the agent connects via the standalone `ModelContextProtocol` 1.3.0 SDK, discovers each server's tools, and adds them to the model's tool list, optionally gated through the existing approval workflow. Canonical example points at Playwright MCP running on localhost.
+
+**Production governance** — `Microsoft.AgentGovernance` (Microsoft-signed, MIT-licensed, public-preview). Opt-in by `./policies/default.yaml`. AGT attaches via a one-line `builder.WithGovernance(adapter)` on the Step 14 builder. Ships YAML-configured policy enforcement, rate limiting, circuit breakers, and tamper-proof audit logging. Covers OWASP Agentic Top 10. `/governance` shows policy state + recent audit events.
 
 ## Prerequisites
 
