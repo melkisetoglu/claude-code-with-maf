@@ -351,11 +351,13 @@ Trade-off: opening Playwright MCP and forgetting it crashes `dotnet run`. The er
 
 `Build()` is sync; the MCP SDK is async. We call `.GetAwaiter().GetResult()` once at startup — same pattern as `/todos` in Step 13. Cost: per-server HTTP round-trip blocks the main thread before the agent starts. For one-or-two servers this is invisible (~50ms). For many servers, an `await`-friendly `BuildAsync` would be cleaner. Stretch.
 
-### Approval gating composes with the existing workshop tools — no new gate code
+### Approval gating reuses the workshop prompt, via a dedicated middleware
 
-Because `McpClientTool` extends `AIFunction`, wrapping with `ApprovalRequiredAIFunction` is mechanical. The user sees the same `[y/N/a=always]` prompt for `browser_navigate` they see for `write_file`. `/yolo` toggles approval-off for both. `a`/`always` per-tool memory works. That composition is genuinely clean — the SDK chose a shape that played well with M.E.AI conventions.
+The user-visible result is the same as for `write_file`: a `[y/N/a=always]` prompt, `/yolo` bypass, `a`/`always` per-tool memory. The path under the hood is different. The obvious-looking move — wrap each `McpClientTool` in `ApprovalRequiredAIFunction` the same way the workshop tools are wrapped — produces the infinite-loop bug documented in **Pitfalls** below. The framework's post-approval invocation path is optimised for functions produced by `AIFunctionFactory.Create()`; custom `AIFunction` subclasses (`McpClientTool` is one) don't reach the same execution leg.
 
-If you ever want a per-tool approval mode (some Playwright tools always-require, others never-require), wrap each with `ApprovalRequiredAIFunction` conditionally based on tool name. Stretch.
+What works instead: a small **function-invocation middleware** (`McpApprovalMiddleware` in `AgentBuilder.cs`) that intercepts calls to MCP tools by name, runs the same `ApprovalPrompt.Ask(...)` the workshop's other gates use, and either calls `next(...)` or short-circuits with a deny result. `AgentBuilder` collects the set of approval-required MCP tool names into a `HashSet<string>` at startup; the middleware closes over that set. Composition is clean at the *behaviour* layer — same prompt, same yolo, same always-memory — and the seam at the *code* layer is the `.Use(McpApprovalMiddleware)` line in the fluent pipeline, not `ApprovalRequiredAIFunction`.
+
+If you want per-tool approval policy (some Playwright tools always-require, others never), the right shape is configuring the HashSet at startup based on `agent.json` rules — not wrapping individual tools. Stretch.
 
 ### `allowedTools` filters silently
 

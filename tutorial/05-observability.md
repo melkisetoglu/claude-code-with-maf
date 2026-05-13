@@ -70,7 +70,7 @@ One new folder, four new files:
 ```
 Observability/FileLogger.cs        — custom ILoggerProvider writing JSON-Lines
 Observability/Pricing.cs           — hardcoded $/MTok rates per model
-Observability/TurnUsage.cs         — token accumulator across approval round-trips
+Observability/UsageAccumulator.cs  — token accumulator across approval round-trips
 .gitignore                          + *.log     (we don't commit claudechat.log)
 ```
 
@@ -129,7 +129,7 @@ Hardcoded `decimal` math, returns `null` for unknown models (which we render as 
 
 ### Per-turn token accumulator
 
-*In [`Observability/TurnUsage.cs`](../Observability/TurnUsage.cs).*
+*In [`Observability/UsageAccumulator.cs`](../Observability/UsageAccumulator.cs) — originally `TurnUsage.cs`, renamed in Step 7 once the class also handled session-wide totals.*
 
 Why a tiny class instead of two `long`s inline:
 
@@ -232,7 +232,7 @@ The `usage` accumulator lives outside the inner `while (true)` loop, so it captu
 
 ```bash
 dotnet build
-dotnet test                                # 83 unit tests (15 new across Pricing + TurnUsage)
+dotnet test                                # 83 unit tests (15 new across Pricing + UsageAccumulator)
 ```
 
 Then a live turn:

@@ -144,8 +144,8 @@ Three deliberate choices:
 The csproj grows two new lines:
 
 ```xml
-<PackageReference Include="Microsoft.Extensions.AI" Version="10.5.1" />
-<PackageReference Include="Microsoft.Extensions.AI.Abstractions" Version="10.5.1" />
+<PackageReference Include="Microsoft.Extensions.AI" Version="10.5.2" />
+<PackageReference Include="Microsoft.Extensions.AI.Abstractions" Version="10.5.2" />
 <PackageReference Include="Anthropic" Version="12.20.1" />
 ```
 
@@ -269,8 +269,8 @@ errorText: "Method not found: 'IList<AIContent> WebSearchToolResultContent.get_R
 **Fix:** two pins. The first unifies the M.E.AI version graph; the second upgrades the Anthropic SDK past the offending stale-API references.
 
 ```xml
-<PackageReference Include="Microsoft.Extensions.AI" Version="10.5.1" />
-<PackageReference Include="Microsoft.Extensions.AI.Abstractions" Version="10.5.1" />
+<PackageReference Include="Microsoft.Extensions.AI" Version="10.5.2" />
+<PackageReference Include="Microsoft.Extensions.AI.Abstractions" Version="10.5.2" />
 <PackageReference Include="Anthropic" Version="12.20.1" />
 ```
 

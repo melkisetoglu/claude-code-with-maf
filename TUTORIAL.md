@@ -30,7 +30,7 @@ The single project at the repo root grows with each step. Run [`dotnet run`](REA
 
 - **MAF is preview.** The package is `Microsoft.Agents.AI.Anthropic 1.5.0-preview.*`. APIs rename between versions, the published docs lag, and some features are in the assembly with no public sample. We've already caught three doc/code drifts in Step 0. **Expectation:** when something doesn't compile, reflect on the restored DLLs to find the real names. There's a probe pattern in Step 0's pitfalls section.
 - **MAF is the runtime, not the UX.** Slash commands, status lines, plan mode, the diff-preview-before-edit dialog — all of that is *harness* code that you write. MAF gives you the agent loop, tools, sessions, compaction, sub-agents. Don't expect Claude Code's UX to fall out of MAF for free; we build it.
-- **This tutorial is in motion, not arrived.** I'm writing chapters as I do the steps. Steps marked _planned_ below are scaffolded but not yet written.
+- **This tutorial shipped 17 of 17 steps.** It was written chapter-by-chapter as the work landed, so earlier chapters occasionally carry framing that later steps refined — the most useful reading order is straight through, but each chapter stands alone.
 
 ---
 

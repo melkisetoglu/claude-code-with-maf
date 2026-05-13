@@ -307,7 +307,7 @@ The workshop-level lesson: **probe broader than the immediate framework.** MAF (
 
 The shipping agent has:
 
-- 11 slash commands (`/help`, `/exit`, `/quit`, `/clear`, `/id`, `/model`, `/cost`, `/tools`, `/sessions`, `/yolo`, `/plan`, `/skills`, `/memory`, `/todos`, `/agents`, `/mcp`, `/governance`)
+- 16 slash commands (`/help`, `/exit` + `/quit` alias, `/clear`, `/id`, `/model`, `/cost`, `/tools`, `/sessions`, `/yolo`, `/plan`, `/skills`, `/memory`, `/todos`, `/agents`, `/mcp`, `/governance`)
 - 7 workshop tools + 1 auto-registered `load_skill` + 5 `FileMemory_*` + 5 `TodoList_*` + 6 `SubAgents_*` + N `browser_*` (when Playwright MCP is wired) = 24+ tools the model can reach
 - 5 `AIContextProvider`s attached (Compaction, Skills, Memory, Todos, SubAgents)
 - A fluent middleware pipeline with: Logging → OpenTelemetry → ToolApproval → MCP-approval → tool-timing → AGT-governance
