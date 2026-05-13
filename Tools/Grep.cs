@@ -9,8 +9,14 @@
 //    - any `.git` directory in the traversal (avoids dumping object hashes)
 //    - files that look binary (first 512 bytes contain a NUL byte)
 //
-//  Capped at 100 matching lines. The cap is per-line, not per-file: 100 hits
-//  in one file finishes the search.
+//  Three caps prevent runaway output (see "the sessions-folder incident":
+//  a single grep across sessions/*.json hit JSON-encoded tool results with
+//  single lines >30 KB long, returning ~250 KB of "matches" — enough to
+//  blow the model's context budget on the NEXT turn):
+//    - MaxMatches:        cap of 100 matching lines total
+//    - MaxMatchLineChars: each match line truncated to 500 chars (the
+//                         rest replaced with "... <line truncated, N chars total>")
+//    - MaxOutputChars:    overall output stops once it reaches 50 KB
 // =============================================================================
 
 using System.ComponentModel;
@@ -21,15 +27,17 @@ namespace ClaudeChat.Tools;
 
 public static class Grep
 {
-    private const int MaxMatches = 100;
-    private const int BinarySniffBytes = 512;
+    private const int MaxMatches        = 100;
+    private const int MaxMatchLineChars = 500;
+    private const int MaxOutputChars    = 50_000;
+    private const int BinarySniffBytes  = 512;
 
     [Description("Search for a regex pattern in file contents. " +
                  "Path can be a file (single-file search) or a directory (recursive). " +
                  "Returns matching lines as 'path:line: matched_text', one per line. " +
                  "Pattern is a .NET regex; case-sensitive by default. " +
                  "The '.git' directory and binary-looking files are skipped automatically. " +
-                 "Capped at 100 matching lines. " +
+                 "Capped at 100 matching lines, 500 chars per matched line, and 50 KB total output. " +
                  "If the pattern is invalid or the path doesn't exist, returns an error string.")]
     public static string Run(
         [Description("Regex pattern to search for.")]
@@ -78,8 +86,29 @@ public static class Grep
                         sb.AppendLine($"... (truncated; showing first {MaxMatches} matches)");
                         return sb.ToString().TrimEnd();
                     }
-                    sb.AppendLine($"{file}:{i + 1}: {lines[i].TrimEnd()}");
+
+                    // Per-match line truncation. A single line of e.g. JSON-
+                    // encoded prior tool output can be 30 KB+; appending it
+                    // verbatim is what blew the model's context window in
+                    // the sessions-folder incident referenced in the file
+                    // header. Truncate to MaxMatchLineChars and tell the
+                    // reader how long the line really was.
+                    var trimmed = lines[i].TrimEnd();
+                    var display = trimmed.Length <= MaxMatchLineChars
+                        ? trimmed
+                        : trimmed[..MaxMatchLineChars] +
+                          $"... <line truncated, {trimmed.Length} chars total>";
+                    sb.AppendLine($"{file}:{i + 1}: {display}");
                     count++;
+
+                    // Overall output budget. After this returns, the model
+                    // sees we stopped early and can refine its query.
+                    if (sb.Length >= MaxOutputChars)
+                    {
+                        sb.AppendLine(
+                            $"... (truncated; output exceeded {MaxOutputChars} chars — narrow your pattern or path)");
+                        return sb.ToString().TrimEnd();
+                    }
                 }
             }
         }

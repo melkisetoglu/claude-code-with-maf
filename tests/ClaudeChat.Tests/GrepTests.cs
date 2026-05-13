@@ -114,4 +114,58 @@ public sealed class GrepTests : IDisposable
         Assert.StartsWith("error:", output);
         Assert.Contains("pattern", output);
     }
+
+    // -------- Caps that prevent runaway output ---------------------------
+    // Regression coverage for the sessions-folder incident: a single grep
+    // across sessions/*.json hit JSON-encoded tool results with single
+    // lines >30 KB long, returning ~250 KB of matches that then blew the
+    // model's context window on the next turn.
+
+    [Fact]
+    public void Truncates_very_long_matched_line()
+    {
+        // Build a 5,000-char line containing the match. Pre-fix this would
+        // be returned verbatim; post-fix it's truncated to ~500 chars with
+        // an explicit "<line truncated, N chars total>" marker.
+        var path = Path.Combine(_tmp, "big.json");
+        var bigLine = "prefix " + new string('x', 4900) + " NEEDLE suffix";
+        File.WriteAllText(path, bigLine + "\n");
+
+        var output = Grep.Run("NEEDLE", path);
+
+        // The full long line must NOT appear in the output.
+        Assert.DoesNotContain(bigLine, output);
+        // The match marker (file:line:) is still there.
+        Assert.Contains($"{path}:1:", output);
+        // And we tell the caller the line was longer than what's shown.
+        Assert.Contains("line truncated", output);
+        Assert.Contains($"{bigLine.Length} chars total", output);
+        // Soft size check — the entire output for a single match shouldn't
+        // be remotely close to the original line's size.
+        Assert.True(output.Length < 1_000,
+            $"single-match output should be <1KB after truncation, was {output.Length}");
+    }
+
+    [Fact]
+    public void Caps_total_output_size_when_many_long_matches()
+    {
+        // 200 files each with a 2 KB matching line. Uncapped, that's ~400 KB
+        // of output. Even with the per-line cap (500 chars) that's still
+        // 200 × ~520 = ~104 KB of output, which still busts the 50 KB cap.
+        // Post-fix: output stops once it crosses MaxOutputChars and announces it.
+        for (int i = 0; i < 200; i++)
+        {
+            var p = Path.Combine(_tmp, $"f{i:000}.json");
+            File.WriteAllText(p, "lead " + new string('y', 1900) + " NEEDLE tail\n");
+        }
+
+        var output = Grep.Run("NEEDLE", _tmp);
+
+        Assert.Contains("output exceeded", output);
+        // The cap is 50 KB. The "truncated" marker is appended after we
+        // detect the cross, so a small overshoot is expected — give some
+        // headroom rather than asserting strictly < 50_000.
+        Assert.True(output.Length < 55_000,
+            $"output should stop near the 50 KB cap, was {output.Length}");
+    }
 }
