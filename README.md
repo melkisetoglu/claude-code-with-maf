@@ -125,7 +125,14 @@ dotnet test                                    # all unit tests
 dotnet test --filter Category=Unit             # explicit filter (same set today)
 ```
 
-Two test classes today, both pure (no API key, no agent): `SessionStoreTests` (NewId / Enumerate / FindByPrefix) and `ReadFileTests` (happy path / missing / oversize / boundary). Live integration tests come later — see CLAUDE.md.
+**173 unit tests across 29 test classes**, all pure (no API key, no agent invocation). Coverage groups:
+- **Persistence** — `SessionStoreTests` (NewId / Enumerate / FindByPrefix).
+- **Tools** — one class per tool: `ReadFileTests`, `ListDirTests`, `GlobTests`, `GrepTests`, `WriteFileTests`, `EditFileTests`, `BashTests`. Happy path + edge cases (missing path, oversize, boundary, approval gating).
+- **Harness** — `SlashRegistryTests`, `ApprovalPromptTests`, `SpinnerTests`, `MarkdownStreamRendererTests`, `ToolRegistryTests`.
+- **Config & observability** — `AgentConfigTests`, `McpConfigTests`, `PricingTests`, `UsageAccumulatorTests`.
+- **Provider wiring** — one `<Feature>RegistrationTests` + one `<Feature>CommandTests` per provider: Compaction, Skills, FileMemory, Todo, SubAgents, Mcp, Governance.
+
+Tests that touch the process-global `Console.Out` share `[Collection("Console-shared-static")]` so they don't race each other. Live integration tests (real Claude calls) are gated to a future `Category=Live` tier — see [CLAUDE.md](CLAUDE.md).
 
 ## Configure
 
@@ -174,20 +181,35 @@ AgentSession session = await agent.DeserializeSessionAsync(sessionElem);
 
 ## Files
 
-- [claude-code-with-maf.csproj](claude-code-with-maf.csproj) — pins `Microsoft.Agents.AI.Anthropic 1.5.0-preview.260507.1`
-- [Program.cs](Program.cs) — entry point: arg parsing, `--list`/`--help`, session resolution
-- [Agent/AgentBuilder.cs](Agent/AgentBuilder.cs) — assembles the `AIAgent` (this is where tools/providers will be added)
-- [Harness/ChatLoop.cs](Harness/ChatLoop.cs) — interactive chat loop, `/command` dispatch, approval round-trip
-- [Harness/ApprovalPrompt.cs](Harness/ApprovalPrompt.cs) — y/N/a gate for approval-required tools (Step 3 + yolo & always from Step 7)
-- [Harness/Commands/SlashDispatch.cs](Harness/Commands/SlashDispatch.cs), [Harness/Commands/ApprovalState.cs](Harness/Commands/ApprovalState.cs) — slash-command registry + shared approval state (Step 7 + plan mode from Step 8)
-- [Harness/Spinner.cs](Harness/Spinner.cs), [Harness/MarkdownStreamRenderer.cs](Harness/MarkdownStreamRenderer.cs) — streaming polish: spinner + fence-aware colour (Step 9)
-- [Persistence/SessionStore.cs](Persistence/SessionStore.cs) — session persistence + metadata wrapper
-- [Tools/ReadFile.cs](Tools/ReadFile.cs) — the `read_file` function tool
-- [Tools/ListDir.cs](Tools/ListDir.cs), [Tools/Glob.cs](Tools/Glob.cs), [Tools/Grep.cs](Tools/Grep.cs) — read-only navigation tools (Step 2)
-- [Tools/WriteFile.cs](Tools/WriteFile.cs), [Tools/EditFile.cs](Tools/EditFile.cs), [Tools/Bash.cs](Tools/Bash.cs) — approval-gated mutation tools (Step 4)
-- [Observability/FileLogger.cs](Observability/FileLogger.cs), [Observability/Pricing.cs](Observability/Pricing.cs), [Observability/TurnUsage.cs](Observability/TurnUsage.cs) — logging + token/cost (Step 5)
-- [Config/AgentConfig.cs](Config/AgentConfig.cs) — `agent.json` schema + loader (Step 6)
-- [skills/repo-context/SKILL.md](skills/repo-context/SKILL.md) — sample agent skill, auto-discovered by `AgentSkillsProvider` (Step 11)
+**Project root**
+- [claude-code-with-maf.csproj](claude-code-with-maf.csproj) — package pins: `Microsoft.Agents.AI.Anthropic` 1.5.0-preview, `Microsoft.Extensions.AI[.Abstractions]` 10.5.2, `Anthropic` 12.20.1, `ModelContextProtocol` 1.3.0, `Microsoft.AgentGovernance[.Extensions.Microsoft.Agents]` 3.6.0
+- [Program.cs](Program.cs) — entry point: arg parsing, `--list`/`--help`, session resolution, `ApprovalState` construction, `BuildResult` unpacking
+- [Agent/AgentBuilder.cs](Agent/AgentBuilder.cs) — composes the agent: client → `AsAIAgent` → 7 function tools + 5 `AIContextProvider`s + the fluent middleware pipeline (`UseLogging` / `UseOpenTelemetry` / `UseToolApproval` / MCP-approval + tool-timing `.Use(...)` / `WithGovernance`). Returns `BuildResult(Agent, Todos, Governance, AuditTrail)`.
+
+**Harness** — the "Claude Code feel" layer (not MAF)
+- [Harness/ChatLoop.cs](Harness/ChatLoop.cs) — interactive chat loop, slash dispatch, approval round-trip, Ctrl+C handling, Anthropic API error catches
+- [Harness/ApprovalPrompt.cs](Harness/ApprovalPrompt.cs) — y/N/a gate for approval-required tools (Step 3; yolo & always from Step 7; plan-mode deny from Step 8)
+- [Harness/Commands/SlashDispatch.cs](Harness/Commands/SlashDispatch.cs), [Harness/Commands/ApprovalState.cs](Harness/Commands/ApprovalState.cs) — 16-command registry + shared yolo/plan/always state
+- [Harness/Spinner.cs](Harness/Spinner.cs), [Harness/MarkdownStreamRenderer.cs](Harness/MarkdownStreamRenderer.cs) — streaming polish: Braille spinner + fence-aware colour (Step 9)
+
+**Persistence**
+- [Persistence/SessionStore.cs](Persistence/SessionStore.cs) — session JSON + metadata wrapper (id/createdAt/preview/model around the framework blob)
+
+**Tools** — all 7 function tools live here
+- [Tools/ReadFile.cs](Tools/ReadFile.cs), [Tools/ListDir.cs](Tools/ListDir.cs), [Tools/Glob.cs](Tools/Glob.cs), [Tools/Grep.cs](Tools/Grep.cs) — read-only navigation (Steps 1–2)
+- [Tools/WriteFile.cs](Tools/WriteFile.cs), [Tools/EditFile.cs](Tools/EditFile.cs), [Tools/Bash.cs](Tools/Bash.cs) — approval-gated mutations (Step 4)
+
+**Observability & config**
+- [Observability/FileLogger.cs](Observability/FileLogger.cs), [Observability/Pricing.cs](Observability/Pricing.cs), [Observability/UsageAccumulator.cs](Observability/UsageAccumulator.cs) — JSON-Lines log, per-model pricing, token accumulator (Step 5)
+- [Config/AgentConfig.cs](Config/AgentConfig.cs) — `agent.json` schema + loader (Step 6; `McpServerConfig` added in Step 16)
+
+**Runtime data folders** (configured by their providers, not committed except for `skills/` example)
+- [skills/repo-context/SKILL.md](skills/repo-context/SKILL.md) — sample skill auto-discovered by `AgentSkillsProvider` (Step 11)
+- `memory/` — `FileMemoryProvider`'s scratchpad; gitignored (Step 12)
+- `policies/default.yaml` — opt-in governance policy file; if present, AGT attaches (Step 17)
+
+**Tests**
+- [tests/ClaudeChat.Tests/](tests/ClaudeChat.Tests/) — 29 unit-test classes, separate `.csproj`, excluded from main project compile glob
 
 ## Notes
 
@@ -202,8 +224,13 @@ The package is prerelease and the MS Learn samples have drifted from the actual 
 
 Names verified by reflecting on the restored DLLs. Expect more drift on each prerelease bump.
 
-## Next steps (not done yet)
+## What's next
 
-- Add a function tool — that's where "agent framework" earns its name vs. a plain chat wrapper.
-- Wire OpenTelemetry — `OpenTelemetryAgentBuilderExtensions` is already in the package.
-- Try Anthropic-on-Foundry — swap `AnthropicClient` for `AnthropicFoundryClient`.
+The workshop is complete (17 of 17 steps). Possible follow-ups, none of them required:
+
+- **Track MAF previews.** The package is `1.5.0-preview.*`. Bump it on each new drop, run the build, fix whatever the API renamed this time. The drift table in **Notes** above is the running log.
+- **Anthropic-on-Foundry.** Swap `AnthropicClient` for `AnthropicFoundryClient` to route through Azure AI Foundry instead of Anthropic's API directly.
+- **More sub-agent profiles.** Step 15 ships one read-only researcher; `SubAgentsProvider` accepts an array. Add a "code-reviewer" or "test-writer" with different toolsets.
+- **Default-deny governance.** Step 17 ships with `default_action: allow` so the workshop is friendly out of the box. Flip it to `deny` and write per-tool allow rules to model a real production posture.
+- **MCP OAuth & remote servers.** Step 16's example is unauthenticated localhost Playwright. Real MCP deployments use OAuth + remote endpoints — `ModelContextProtocol`'s SDK supports both.
+- **Live integration tests.** All 173 tests today are pure (`Category=Unit`). A `Category=Live` tier that hits real Claude, gated to nightly CI, would catch preview drift before it bites a workshop run.
