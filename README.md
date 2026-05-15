@@ -26,11 +26,12 @@ The agent is **17 of 17 steps shipped** — a working Claude Code-style REPL on 
 **Configuration**
 - External `agent.json` profile: model, system prompt, tool allowlist, approval rules, MCP servers.
 
-**Slash commands** (16 total)
+**Slash commands** (17 total)
 - `/help`, `/exit`, `/clear`, `/id`, `/model`, `/tools`, `/cost`, `/sessions` — basics.
 - `/yolo` — auto-approve-everything; "always approve this tool" memory at the approval prompt.
 - `/plan` — read-only mode; mutations auto-deny. Mutually exclusive with `/yolo`.
 - `/skills`, `/memory`, `/todos`, `/agents`, `/mcp`, `/governance` — surface state from each provider.
+- `/compact` — reduce conversation history on demand (workaround while `CompactionProvider` is detached; see [field notes](tutorial/field-notes/)).
 
 **Streaming polish**
 - Ctrl+C interrupts the in-flight turn (process stays alive).
@@ -89,6 +90,7 @@ Commands inside the chat (all slash-prefixed):
 - `/agents` — list configured sub-agents (Step 15)
 - `/mcp` — list configured MCP servers from `agent.json` (Step 16; headers redacted)
 - `/governance` — show AGT policy state + recent audit events (Step 17)
+- `/compact` — reduce conversation history on demand via `ContextWindowCompactionStrategy` (workaround while `CompactionProvider` is detached — see [field notes](tutorial/field-notes/2026-05-15-compaction-mkdir-loop.md))
 
 At the approval prompt, answers are `y`/`yes` to approve once, `a`/`always` to approve and remember this tool for the rest of the session, anything else to deny.
 
