@@ -298,7 +298,18 @@ public static class AgentBuilder
         // Opt-in: only attach if ./skills/ exists. Avoids surprising older
         // sessions and keeps the "do nothing if you haven't asked for it"
         // default. The /skills slash command observes the same convention.
-        var providers = new List<AIContextProvider> { compactionProvider };
+        //
+        // 2026-05-15 — CompactionProvider temporarily DISABLED. Construction
+        // left in place above for the Step 10 lesson; just not attached.
+        // MAF preview bug: the provider round-trips the in-flight message
+        // list through JSON serialisation on every turn, and the polymorphic
+        // ToolCall reference inside ToolApprovalRequestContent doesn't
+        // survive that round-trip — the call_id binding is lost. Effect:
+        // after the user approves a tool, MAF can't bind the response to
+        // the original call, the model re-emits the same approval request,
+        // and the conversation loops. Re-attach `compactionProvider` once
+        // MAF fixes the serialisation (one-token change).
+        var providers = new List<AIContextProvider>();
         var skillsDir = Path.Combine(Directory.GetCurrentDirectory(), SkillsDirectoryName);
         if (Directory.Exists(skillsDir))
         {

@@ -1,5 +1,7 @@
 # Step 03 — Tool-approval gate (`ToolApprovalAgent`)
 
+> ⚠ Known preview issue (2026-05-15): when this gate is composed with `CompactionProvider` (Step 10), approval responses fail to persist to history and the model loops re-requesting the same step. The compaction provider is currently detached by default; this chapter's gate works correctly on its own. See [field-notes/2026-05-15-compaction-mkdir-loop.md](field-notes/2026-05-15-compaction-mkdir-loop.md).
+
 > *Goal: separate "the model decided to do this" from "the action happened." A per-call human checkpoint that stands between the model and any tool we don't fully trust.*
 
 > **Retrospective heads-up (added after Step 14).** This step hand-wires `ToolApprovalAgent` with a raw `new ToolApprovalAgent(inner, JsonSerializerOptions.Default)` constructor call. MAF ships `ToolApprovalAgentBuilderExtensions.UseToolApproval(jsonOpts)` on the `AIAgentBuilder` fluent pipeline — same outcome, one line. We didn't know until Step 14, which discovers `AIAgentBuilder` and refactors the wrap chain. **This chapter stands as-is** — the delegating-agent pattern it teaches is the foundation that `.UseToolApproval` is sugar over, and you need to understand the wrap before you understand the builder. In production code, prefer the fluent form. Full discussion in [Step 14's chapter](14-middleware.md).

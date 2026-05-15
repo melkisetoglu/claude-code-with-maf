@@ -1,5 +1,7 @@
 # Step 10 — Context compaction via `CompactionProvider`
 
+> ⚠ Known preview issue (2026-05-15): the provider is currently **disabled by default** in `AgentBuilder.cs` due to a polymorphic-serialisation bug that loops approval-required tools. Compaction is now exposed as an on-demand `/compact` slash command. See [field-notes/2026-05-15-compaction-mkdir-loop.md](field-notes/2026-05-15-compaction-mkdir-loop.md) for the full diagnosis and one-token revert path.
+
 > *Goal: long-running sessions don't fall off the context window. As history grows, MAF compacts older turns (drops tool results, then truncates) so the active prompt stays inside the model's input budget.*
 
 Steps 0–9 had a quietly-fragile property: every turn shipped the **entire** conversation history to the model. For short sessions that's fine. For a "spend three hours fixing a bug" project session, the history hits the model's context window and you either lose old context, lose new turns, or start getting truncated responses — depending on whose code is doing the truncating.

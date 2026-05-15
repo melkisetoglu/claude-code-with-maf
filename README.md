@@ -232,6 +232,14 @@ Names verified by reflecting on the restored DLLs.
 
 Expect more drift on each prerelease bump. The workshop's working assumption: when something doesn't compile, reflect on the restored DLLs to find the real names rather than trusting web docs.
 
+## Field notes
+
+The 17 chapters are the linear teaching path. Things discovered *after* the workshop shipped — preview-API bugs, signal-shape lessons, drift between docs and reality — live in [`tutorial/field-notes/`](tutorial/field-notes/). Each entry is dated and cross-links the chapter(s) it touches.
+
+Open entries:
+
+- [2026-05-15 — Compaction provider serialises in-flight ToolCall references](tutorial/field-notes/2026-05-15-compaction-mkdir-loop.md). Approval-required tools loop on Haiku when `CompactionProvider` is attached. Workaround: provider detached; compaction is now on demand via `/compact`.
+
 ## What's next
 
 The workshop is complete (17 of 17 steps). Possible follow-ups, none of them required:

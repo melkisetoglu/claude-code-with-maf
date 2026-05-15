@@ -32,6 +32,8 @@
 
 using System.Globalization;
 using Microsoft.Agents.AI;
+using Microsoft.Agents.AI.Compaction;
+using Microsoft.Extensions.AI;
 using ClaudeChat.Agent;
 using ClaudeChat.Config;
 using ClaudeChat.Observability;
@@ -141,6 +143,7 @@ public sealed class SlashRegistry
             new AgentsCommand(),
             new McpCommand(),
             new GovernanceCommand(),
+            new CompactCommand(),
         };
         self = new SlashRegistry(commands);
         return self;
@@ -589,6 +592,77 @@ internal sealed class GovernanceCommand : ISlashCommand
         foreach (var evt in snapshot.TakeLast(5))
         {
             Console.WriteLine($"    {evt}");
+        }
+        Console.WriteLine();
+        return SlashAction.Continue;
+    }
+}
+
+// =============================================================================
+//  CompactCommand — on-demand conversation compaction.
+//
+//  Why a slash command instead of letting the provider auto-run: in MAF
+//  preview 1.5.0 the CompactionProvider round-trips the in-flight message
+//  list through JSON on every turn, and the polymorphic ToolCall reference
+//  inside a live ToolApprovalRequestContent doesn't survive that round-trip.
+//  After the user approves a tool, MAF can't bind the response to the
+//  original call and the model re-emits the same approval request, looping.
+//
+//  Workaround: keep ContextWindowCompactionStrategy, drop the provider from
+//  the AIContextProviders list (see AgentBuilder.cs), expose compaction as
+//  `/compact`. Running between turns means no in-flight ToolCall is exposed
+//  to the serialiser — the messages we hand to the reducer are settled.
+//
+//  Mechanics: build the strategy with the workshop's existing constants,
+//  wrap it as IChatReducer via ChatStrategyExtensions.AsChatReducer(), call
+//  ReduceAsync on the session's InMemoryChatHistory, write the reduced list
+//  back. Sync-over-async because ISlashCommand.Run is sync — same pattern
+//  AgentBuilder uses for MCP startup discovery.
+// =============================================================================
+internal sealed class CompactCommand : ISlashCommand
+{
+    public string Name => "/compact";
+    public string Description => "Reduce conversation history on demand (between turns)";
+
+    public SlashAction Run(SlashContext ctx)
+    {
+        Console.WriteLine();
+
+        if (!ctx.Session.TryGetInMemoryChatHistory(out var hist) || hist is null || hist.Count == 0)
+        {
+            Console.WriteLine("  (no chat history to compact yet)");
+            Console.WriteLine();
+            return SlashAction.Continue;
+        }
+
+        var before = hist.Count;
+        try
+        {
+#pragma warning disable MAAI001
+            var strategy = new ContextWindowCompactionStrategy(
+                maxContextWindowTokens: AgentBuilder.CompactionContextWindowTokens,
+                maxOutputTokens:        AgentBuilder.CompactionMaxOutputTokens);
+
+            var reduced = strategy.AsChatReducer()
+                .ReduceAsync(hist, CancellationToken.None)
+                .GetAwaiter().GetResult()
+                .ToList();
+#pragma warning restore MAAI001
+
+            ctx.Session.SetInMemoryChatHistory(reduced);
+
+            if (reduced.Count == before)
+            {
+                Console.WriteLine($"  no compaction needed ({before} messages, still under window)");
+            }
+            else
+            {
+                Console.WriteLine($"  compacted: {before} → {reduced.Count} messages");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  compaction failed: {ex.GetType().Name}: {ex.Message}");
         }
         Console.WriteLine();
         return SlashAction.Continue;
