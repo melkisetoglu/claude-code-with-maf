@@ -126,6 +126,22 @@ public sealed class SessionStoreTests : IDisposable
         Assert.Single(matches);
     }
 
+    [Fact]
+    public void EnsureDir_sweeps_orphan_tmp_files()
+    {
+        // SaveAsync now writes <id>.json.tmp then renames; a SIGKILL mid-write
+        // can leave the .tmp behind. EnsureDir cleans them up at startup.
+        WriteFakeSession("a3f7c102", "claude-haiku-4-5", null);
+        File.WriteAllText(Path.Combine(_tmp, "a3f7c102.json.tmp"), "stale");
+        File.WriteAllText(Path.Combine(_tmp, "b1c2d3e4.json.tmp"), "stale");
+
+        SessionStore.EnsureDir();
+
+        Assert.False(File.Exists(Path.Combine(_tmp, "a3f7c102.json.tmp")));
+        Assert.False(File.Exists(Path.Combine(_tmp, "b1c2d3e4.json.tmp")));
+        Assert.True(File.Exists(Path.Combine(_tmp, "a3f7c102.json")));
+    }
+
     // ---------- helpers ----------
 
     private void WriteFakeSession(string id, string model, string? preview)

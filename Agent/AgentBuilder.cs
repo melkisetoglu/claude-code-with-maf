@@ -252,10 +252,24 @@ public static class AgentBuilder
         // MCP tools land in `mcpApprovalRequired` instead; the function-
         // invocation middleware below gates them with the same
         // [y/N/a=always] UX.
+        //
+        // A 10-second startup CTS bounds the wait; without it, a stale
+        // mcpServers entry hangs Build() indefinitely (Ctrl+C isn't wired
+        // until ChatLoop starts). See field note 2026-05-16-mcp-startup-timeout.
         var mcpApprovalRequired = new HashSet<string>(StringComparer.Ordinal);
-        AppendMcpServerToolsAsync(tools, config?.McpServers, loggerFactory,
-                                  mcpApprovalRequired, CancellationToken.None)
-            .GetAwaiter().GetResult();
+        using var mcpStartupCts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        try
+        {
+            AppendMcpServerToolsAsync(tools, config?.McpServers, loggerFactory,
+                                      mcpApprovalRequired, mcpStartupCts.Token)
+                .GetAwaiter().GetResult();
+        }
+        catch (OperationCanceledException) when (mcpStartupCts.IsCancellationRequested)
+        {
+            throw new InvalidOperationException(
+                "MCP server discovery timed out after 10s. Check agent.json mcpServers " +
+                "— is the server actually running? Remove the entry to start without MCP.");
+        }
 
         // Step 10: switching from the AsAIAgent(model, instructions, …)
         // shortcut to the AsAIAgent(ChatClientAgentOptions) overload because
@@ -801,6 +815,12 @@ public static class AgentBuilder
             var client    = await McpClient.CreateAsync(transport, null, loggerFactory, ct);
             var tools     = await client.ListToolsAsync(cancellationToken: ct);
             return (tools, client);
+        }
+        catch (OperationCanceledException)
+        {
+            // Caller owns timeout/cancel policy — let it distinguish a
+            // startup timeout from a real connection failure.
+            throw;
         }
         catch (Exception ex)
         {

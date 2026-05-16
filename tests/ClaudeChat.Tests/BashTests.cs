@@ -107,4 +107,16 @@ public sealed class BashTests : IDisposable
 
         Assert.Contains("truncated", result);
     }
+
+    [Fact]
+    public void Cap_measures_chars_not_bytes()
+    {
+        // 'あ' is one UTF-16 code unit but three UTF-8 bytes. 20000 lines of
+        // 'あ\n' is ~40K chars (under the 50K char cap) but ~80K bytes on
+        // the wire. The cap is documented in characters, so this passes
+        // through without truncation.
+        var result = Bash.Run("yes 'あ' | head -n 20000", _tmp);
+
+        Assert.DoesNotContain("truncated", result);
+    }
 }

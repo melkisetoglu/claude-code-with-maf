@@ -8,8 +8,9 @@
 //  Caps:
 //    - 30s timeout. Catches hangs and 'sleep infinity'-style misbehaviour.
 //      Process is killed on timeout (and its children, best-effort).
-//    - 50KB combined stdout+stderr. Catches 'yes | head -c 1G'-style
-//      output bombs that would blow up the model's context.
+//    - 50K characters combined stdout+stderr. Catches 'yes | head -c 1G'-style
+//      output bombs that would blow up the model's context. Char count, not
+//      byte count — see field note 2026-05-16-bash-output-cap-unit.
 //
 //  We don't do command parsing or pattern blacklisting. Static analysis of
 //  shell strings is defeated by absolute paths, command substitution,
@@ -27,10 +28,10 @@ namespace ClaudeChat.Tools;
 public static class Bash
 {
     private const int TimeoutMs = 30_000;
-    private const int MaxOutputBytes = 50_000;
+    private const int MaxOutputChars = 50_000;
 
     [Description("Run a shell command via /bin/bash -c. Returns combined stdout+stderr. " +
-                 "Times out after 30 seconds. Output is capped at 50KB (truncated). " +
+                 "Times out after 30 seconds. Output is capped at 50K characters (truncated). " +
                  "WARNING: this is unrestricted shell access — the model can do anything " +
                  "the user account can (delete files, modify configs, network requests, etc.). " +
                  "Always review the command shown in the approval prompt before approving. " +
@@ -74,11 +75,11 @@ public static class Bash
                 lock (lockObj)
                 {
                     if (truncated) return;
-                    if (output.Length + line.Length + 1 > MaxOutputBytes)
+                    if (output.Length + line.Length + 1 > MaxOutputChars)
                     {
-                        var room = MaxOutputBytes - output.Length;
+                        var room = MaxOutputChars - output.Length;
                         if (room > 0) output.Append(line.AsSpan(0, Math.Min(room, line.Length)));
-                        output.Append("\n... (truncated; output exceeded 50KB)");
+                        output.Append("\n... (truncated; output exceeded 50K characters)");
                         truncated = true;
                         return;
                     }

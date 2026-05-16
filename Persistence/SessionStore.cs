@@ -41,7 +41,16 @@ public static class SessionStore
     // that avoids passing a directory through every call site.
     public static string Dir = "sessions";
 
-    public static void EnsureDir() => Directory.CreateDirectory(Dir);
+    public static void EnsureDir()
+    {
+        Directory.CreateDirectory(Dir);
+        // Sweep .json.tmp files left behind by interrupted SaveAsync calls;
+        // SaveAsync now writes-then-renames, see the field note from 2026-05-16.
+        foreach (var tmp in Directory.EnumerateFiles(Dir, "*.json.tmp"))
+        {
+            try { File.Delete(tmp); } catch { /* best-effort */ }
+        }
+    }
 
     // 4 random bytes → 8 hex chars (~4B space). We resolve by prefix on resume,
     // so users only ever type the first few — same as `git checkout abc`.
@@ -62,9 +71,15 @@ public static class SessionStore
             ["preview"]   = preview,
             ["session"]   = JsonNode.Parse(snapshot.GetRawText()),
         };
-        await File.WriteAllTextAsync(
-            Path.Combine(Dir, id + ".json"),
+        // Atomic save: write to <id>.json.tmp, then rename. File.Move with
+        // overwrite is atomic on POSIX (same filesystem). A SIGKILL mid-write
+        // leaves the .tmp behind but the previous <id>.json intact — worst
+        // case is an orphan tmp file, which EnsureDir() sweeps on startup.
+        var finalPath = Path.Combine(Dir, id + ".json");
+        var tmpPath = finalPath + ".tmp";
+        await File.WriteAllTextAsync(tmpPath,
             node.ToJsonString(new() { WriteIndented = true }));
+        File.Move(tmpPath, finalPath, overwrite: true);
     }
 
     public static async Task<AgentSession> LoadAsync(SessionMeta meta, AIAgent agent)
