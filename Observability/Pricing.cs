@@ -10,8 +10,8 @@
 //    claude-haiku-4-5    $1.00 / MTok input, $5.00 / MTok output
 //    claude-sonnet-4-6   $3.00 / MTok input, $15.00 / MTok output
 //
-//  Unknown models fall back to a zero-cost row so the per-turn line shows
-//  "$?" instead of crashing.
+//  Unknown models return null from Lookup / CostUsd; UsageAccumulator
+//  renders "$?" in that case instead of crashing.
 // =============================================================================
 
 namespace ClaudeChat.Observability;

@@ -12,8 +12,11 @@
 //  using the same shape. The class itself didn't change; the name did,
 //  because "turn" stopped being the whole story.
 //
-//  Step 17 (budgets) will extend this to subtract from a remaining-budget
-//  counter and raise when the cap is hit.
+//  Step 17 dropped the originally-planned budget enforcer. AGT
+//  (Microsoft.AgentGovernance, attached in Agent/AgentBuilder.cs) does
+//  rate limiting, circuit breaking, and audit — not token/dollar caps.
+//  Cost accounting here remains purely informational; nothing enforces
+//  a spend ceiling.
 // =============================================================================
 
 using Microsoft.Extensions.AI;

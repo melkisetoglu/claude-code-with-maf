@@ -3,9 +3,8 @@
 //
 //  This is the "Claude Code feel" layer, not MAF. The loop:
 //    1. Reads a user line.
-//    2. If it starts with '/', hand it to the SlashRegistry (Step 7). The
-//       registry handles /help, /clear, /id, /exit, /tools, /cost, /model,
-//       /sessions, /yolo without round-tripping to the model.
+//    2. If it starts with '/', hand it to the SlashRegistry (Step 7).
+//       See SlashRegistry.Default() for the registered command set.
 //    3. Otherwise: streams a turn via RunStreamingAsync, possibly looping
 //       if the model hits an approval-required tool (Step 3+): we collect
 //       any ToolApprovalRequestContent emitted in the stream, prompt the
@@ -15,10 +14,6 @@
 //
 //  Persisting per turn (rather than only on exit) means Ctrl+C can't lose
 //  state.
-//
-//  Future steps that touch this file:
-//    - Step 08: plan mode toggle (likely a /plan + /accept-plan command).
-//    - Step 09: Ctrl+C interrupt of an in-flight stream + spinner.
 // =============================================================================
 
 using Microsoft.Agents.AI;

@@ -6,7 +6,7 @@
 //      if (input == "/clear") { ...; continue; }
 //      if (input == "/id") { ...; continue; }
 //
-//  That worked for three commands. Step 7 adds five more (/help, /tools,
+//  That worked for three commands. Step 7 adds six more (/help, /tools,
 //  /cost, /model, /sessions, /yolo), so the chain becomes a dispatcher:
 //  a name → ISlashCommand registry plus a small mutable context the
 //  commands can read and (in /clear's case) modify.

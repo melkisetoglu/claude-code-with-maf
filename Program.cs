@@ -128,7 +128,7 @@ var model = !string.IsNullOrEmpty(modelEnv)
 //  Observability — Step 5
 //
 //  Logging: a custom JSON-Lines file writer (Observability/FileLogger.cs).
-//  Level controlled by CLAUDECHAT_LOG_LEVEL (default Information).
+//  Level controlled by CLAUDECHAT_LOG_LEVEL (default Debug).
 //
 //  Tracing: OpenTelemetry with the console exporter, only when --otel was
 //  passed. The console exporter dumps spans into stdout, which is noisy but

@@ -33,9 +33,11 @@ public sealed record ToolsConfig(
 /// <summary>
 /// Step 16 — describes one MCP server the agent should expose to the model.
 ///
-/// Maps to <c>Microsoft.Extensions.AI.HostedMcpServerTool</c>. Each entry in
-/// <c>agent.json.mcpServers</c> becomes one AITool added to the agent's tool
-/// list; the framework handles transport (HTTP/SSE) to the server URL.
+/// Each entry becomes a direct <c>McpClientTool</c> via
+/// <c>ModelContextProtocol.Client.McpClient</c> over <c>HttpClientTransport</c>.
+/// We bypass <c>Microsoft.Extensions.AI.HostedMcpServerTool</c> intentionally
+/// — see <c>AgentBuilder.AppendMcpServerToolsAsync</c> and its comment for why
+/// that path is broken for approval-required MCP tools in this MAF preview.
 ///
 /// Fields:
 ///   - <see cref="Name"/>     : friendly identifier shown to the model + in /tools.

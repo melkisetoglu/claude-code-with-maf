@@ -2,8 +2,9 @@
 //  ApprovalPrompt — the y/N gate the user sees when an approval-required
 //  tool is about to run.
 //
-//  Default policy: deny unless the user types 'y' or 'yes' (case-insensitive,
-//  whitespace-trimmed). Anything else, including empty input, denies. The
+//  Default policy: deny unless the user types 'y' / 'yes' (one-shot approve)
+//  or 'a' / 'always' (approve and remember the tool for the session — see
+//  Step 7 below). Anything else, including empty input, denies. The
 //  asymmetry is deliberate: an accidentally-approved destructive action is
 //  unrecoverable; an accidentally-denied one is annoying but recoverable.
 //
